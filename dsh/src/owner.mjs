@@ -5,7 +5,7 @@ export const targets = {
   'com.eg.android.AlipayGphone': '支付宝',
 };
 
-export function createOwner({ run, logDir, capture, windowFrame, toJpeg, now = () => new Date() }) {
+export function createOwner({ run, logDir, capture, windowFrame, toJpeg, now = () => new Date(), sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), recognizeMs = 10000 }) {
   let target = null;
   let last = null;
   let inFlight = null;
@@ -46,10 +46,14 @@ export function createOwner({ run, logDir, capture, windowFrame, toJpeg, now = (
       return record('scan', async () => {
         const frame = await windowFrame(placementId);
         if (!frame.visible) throw new Error('扫码需要先把卡片开成置顶小窗');
+        if (!(await run(['status'])).streams) throw new Error('相机未打开：先在手机画面打开扫一扫');
         const image = join(logDir, 'viewfinder.png');
         await capture({ x: frame.x + x, y: frame.y + y, width, height }, image);
         await run(['image', image]);
-        return { scanned: true };
+        for (const started = now(); now() - started < recognizeMs; await sleep(500)) {
+          if (!(await run(['status'])).streams) return { scanned: true, recognized: true };
+        }
+        return { scanned: true, recognized: false };
       });
     },
     async screen() {

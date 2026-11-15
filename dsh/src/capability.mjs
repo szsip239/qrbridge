@@ -37,7 +37,9 @@ export const actions = {
   'qrbridge.scan': {
     input: { type: 'object', additionalProperties: false,
       properties: { placementId: { type: 'string', minLength: 1 }, ...viewfinder.properties }, required: ['placementId', ...viewfinder.required] },
-    output: done('scanned'), effect: 'write', connections: [], errors: [],
+    output: { type: 'object', additionalProperties: false,
+      properties: { scanned: { type: 'boolean' }, recognized: { type: 'boolean' } }, required: ['scanned', 'recognized'] },
+    effect: 'write', connections: [], errors: [],
   },
 };
 

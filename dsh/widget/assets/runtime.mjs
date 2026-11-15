@@ -21,6 +21,7 @@ function viewfinder() {
 function notice(last) {
   if (!last) return '';
   if (!last.ok) return `${last.name} 失败：${last.message}`;
+  if (last.name === 'scan') return last.result.recognized ? '已识别：请在手机画面确认' : '未识别：调整取景框对准二维码后重试';
   return last.result.opened?.includes('DoubleAppResolver') ? '出现分身选择框：请在手机画面里选原版 App' : '';
 }
 
@@ -77,7 +78,10 @@ function setPhoneView(on) {
   }
 }
 $('view').addEventListener('click', () => setPhoneView($('phone').hidden));
-$('scan').addEventListener('click', () => { setPhoneView(false); controller.scan(viewfinder()); });
+$('scan').addEventListener('click', () => {
+  setPhoneView(false);
+  controller.scan(viewfinder()).then(() => running && setPhoneView(true));
+});
 bridge.onVisibilityChange(visible => { if (!visible) setPhoneView(false); });
 $('screen').addEventListener('click', event => {
   const image = $('screen');

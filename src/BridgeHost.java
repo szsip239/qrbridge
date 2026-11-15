@@ -180,7 +180,11 @@ public final class BridgeHost {
                     draw((Integer) args[0],null);
                     break;
                 case "onProcessCaptureRequest": draw((Integer) args[0],((Number) args[1]).longValue()); break;
-                case "onStreamClosed": streams.remove((Integer) args[0]); break;
+                case "onStreamClosed":
+                    streams.remove((Integer) args[0]);
+                    // A scanner closes its stream once it recognises the code; the next scan must not see the old code.
+                    if (streams.isEmpty()) frame = null;
+                    break;
                 case "hashCode": return System.identityHashCode(proxy);
                 case "equals": return proxy == args[0];
                 case "toString": return "二维码桥接相机回调";

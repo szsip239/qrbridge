@@ -41,18 +41,41 @@ test('a failed action is rethrown and reported in the next snapshot while the ho
   });
 });
 
-test('scan captures the viewfinder at the window position and sends it as the camera image', async () => {
-  const calls = [];
+function scanOwner(streamsAfterImage, calls = []) {
+  let clock = 0, imageSent = false;
   const owner = createOwner({
-    run: async args => { calls.push(['run', args]); return {}; }, logDir: '/logs', now,
+    run: async args => {
+      calls.push(['run', args]);
+      if (args[0] === 'image') imageSent = true;
+      return args[0] === 'status' ? { streams: imageSent ? streamsAfterImage : 1 } : {};
+    },
+    logDir: '/logs', now: () => new Date(clock), sleep: async ms => { clock += ms; }, recognizeMs: 2000,
     windowFrame: async id => ({ visible: true, x: 1488, y: 52, width: 360, height: 440, id }),
     capture: async (region, path) => calls.push(['capture', region, path]),
   });
-  await owner.scan({ placementId: 'qrbridge.scan', x: 14, y: 140, width: 332, height: 200 });
+  return owner;
+}
+const viewfinder = { placementId: 'qrbridge.scan', x: 14, y: 140, width: 332, height: 200 };
+
+test('scan sends the viewfinder at the window position and reports recognition when the scanner closes', async () => {
+  const calls = [];
+  assert.deepEqual(await scanOwner(0, calls).scan(viewfinder), { scanned: true, recognized: true });
   assert.deepEqual(calls, [
+    ['run', ['status']],
     ['capture', { x: 1502, y: 192, width: 332, height: 200 }, '/logs/viewfinder.png'],
     ['run', ['image', '/logs/viewfinder.png']],
+    ['run', ['status']],
   ]);
+});
+
+test('scan reports no recognition while the scanner keeps its stream open', async () => {
+  assert.deepEqual(await scanOwner(1).scan(viewfinder), { scanned: true, recognized: false });
+});
+
+test('scan refuses when the phone has no camera stream open', async () => {
+  const owner = createOwner({ run: async () => ({ streams: 0 }), logDir: '/logs', now, capture: assert.fail,
+    windowFrame: async () => ({ visible: true, x: 0, y: 0, width: 1, height: 1 }) });
+  await assert.rejects(owner.scan(viewfinder), /先在手机画面打开扫一扫/);
 });
 
 test('scan refuses a card that is not open as a window', async () => {
