@@ -255,3 +255,17 @@ paired、unplugged、rebooted 码分别为 `android-qr-bridge:round7:paired:2026
 | 关卡 6：网页端已登录 | **通过。** 网页进入已登录的支付宝商家平台，随后点击退出登录，页面显示登录入口，关闭独立 task-space；见本地 `web-logged.png`。 |
 
 开始和结束时原生无线调试均开启、配对保留，传统 TCP 两项属性均为空，转发列表一致且为空；原有 companion association 保留，没有残留虚拟设备或手机实验目录。`down-final.txt`、`virtual-final.txt`、`companion-final.txt`、`remote-final.txt` 和前后基线文件记录清理。支付宝重新在 display 0 打开首页，仍处于登录状态；见 `physical-final-activities.txt` 和截图。没有提交 Git。
+
+## DSH 玻璃卡片实机验收：微信（round9）
+
+2026-11-16，USB ADB，独立 DSH home（Host 0.1.17 加透明 Widget Window 改动、helper `0.3.0-native-poc.15`、卡片 `@qrbridge/dsh-qrbridge` 0.1.9）。用户只在 Mac 上操作卡片，手机端由 Terra Worker 只读取证。**微信网页登录整链通过**，原始证据仅存于 Git 忽略的 `.local/accept/round9/`。
+
+| 检查点 | 结果与证据 |
+| --- | --- |
+| 0 预检 | 通过：唯一设备，主机未运行，无本原型 association（`0/`）。 |
+| A 卡片“微信” | 首次未通过：微信任务仍在 display 0 且已停止，虚拟显示为空；主机日志显示 vivo 双开选择框 `DoubleAppResolverActivity` 出现后无人选择、随即 `onDisplayEmpty`（`A/`、`A-diag/`）。“结束”后重按“微信”，在卡片手机画面中选原版微信后通过：`LauncherUI` 为虚拟显示 top，CAMERA 已授予（`A2/`）。物理屏锁屏，虚拟显示 `KeyguardShowing=false`，不影响操作。 |
+| B 扫一扫 | 通过：卡片手机画面中打开扫一扫，`BaseScanUI` 留在虚拟显示，`media.camera` 中微信连接虚拟相机，status 有一个流；送码前 `capture-frame` 640×480（`B/`）。 |
+| C 玻璃窗扫码 | 通过：卡片截取透明取景框下的网页登录码（`dsh-logs/viewfinder.png`，电脑 ZXing 解码成功）并送入；微信进入 `ExtDeviceWXLoginUI`，仍在虚拟显示。确认页为英文界面“Login confirmation / Open File Transfer for Web / Open / Cancel”，无风险提示；控件树为空（`C/`）。 |
+| D 业务结果与清理 | 用户在卡片手机画面点“Open”，网页进入文件传输助手（用户观察），随后网页退出登录；手机 `ChattingUI` 在虚拟显示（`D/`）。“结束”后主机进程不在、association 为零、手机临时目录不存在、无残留虚拟设备；活动转储中已无微信任务（虚拟显示带 `DESTROY_CONTENT_ON_REMOVAL`），未证实微信回到 display 0 或登录状态（`D-cleanup/`）。 |
+
+卡片暴露的问题：`up` 不显示启动结果，双开选择框只能靠手机画面发现；动作执行中按钮仍可点，“结束”被执行两次，第二次在读取已删日志处报错；主机停止后手机画面仍保留最后一帧；“确认登录”按钮只认中文文字且依赖控件树，微信确认页需在手机画面点击。截图含私人聊天内容，只留本地。支付宝未在本轮执行。
