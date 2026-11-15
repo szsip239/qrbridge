@@ -11,7 +11,7 @@ const now = () => new Date('2026-11-15T12:00:00.000Z');
 test('bridge CLI passes the serial and surfaces the last stderr line on failure', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'qrbridge-'));
   const script = join(dir, 'bridge.py');
-  await writeFile(script, 'import json, sys\nif sys.argv[-1] == "fail":\n    sys.exit("trace\\n原型 association 已存在")\nprint(json.dumps(sys.argv[1:]))\n');
+  await writeFile(script, 'import json, sys\nif sys.argv[-1] == "fail":\n    sys.exit("Traceback\\nRuntimeError: 原型 association 已存在")\nprint(json.dumps(sys.argv[1:]))\n');
   await chmod(script, 0o755);
   const run = createBridgeCli({ bridge: script, serial: 'device one' });
   assert.deepEqual(await run(['status']), ['--serial', 'device one', 'status']);
