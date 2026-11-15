@@ -31,6 +31,11 @@ export function createController(bridge, { onSnapshot, onBusy, onError }) {
     refresh,
     up: name => act('qrbridge.up', { package: name }),
     down: () => act('qrbridge.down', {}),
+    scan: viewfinder => act('qrbridge.scan', viewfinder),
+    screen: () => bridge.requestReadIntent('qrbridge.screen', {}),
+    tap: point => act('qrbridge.tap', point),
+    back: () => act('qrbridge.back', {}),
+    confirm: () => act('qrbridge.confirm', {}),
     dispose() { unsubscribe.forEach(remove => remove()); },
   };
 }

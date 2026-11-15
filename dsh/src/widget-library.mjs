@@ -26,7 +26,9 @@ export async function registerWidgetLibrary(board) {
           schemaVersion: 1, id: `automation.${name}.${placementId}`, revision: 1, title: name, enabled: true,
           trigger: { kind: 'widget_intent', placementId, name },
           action: { installationId, name, connections: {}, input: Object.fromEntries(
-            Object.keys(actions[name].input.properties).map(key => [key, { kind: 'pointer', source: 'intent', pointer: `/${key}` }])) },
+            Object.keys(actions[name].input.properties).map(key => [key, key === 'placementId'
+              ? { kind: 'constant', value: placementId }
+              : { kind: 'pointer', source: 'intent', pointer: `/${key}` }])) },
           createdAt, updatedAt: createdAt,
         })),
       };

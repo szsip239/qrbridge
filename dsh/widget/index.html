@@ -7,11 +7,11 @@
 <style>
 :root {
   color-scheme: light dark;
-  --fg: #0e1d29; --muted: #3f5566; --pane: rgba(250,252,255,.72); --edge: rgba(255,255,255,.9);
+  --fg: #0e1d29; --muted: #3f5566; --pane: rgb(250,252,255); --edge: rgba(255,255,255,.9);
   --frame: rgba(255,255,255,.95); --shade: rgba(10,30,50,.18); --ok: #0f7a4f; --bad: #b3261e; --accent: #0b63c9;
 }
 :root[data-mosaic-theme="dark"] {
-  --fg: #ecf3f9; --muted: #a9bccb; --pane: rgba(22,32,44,.72); --edge: rgba(255,255,255,.22);
+  --fg: #ecf3f9; --muted: #a9bccb; --pane: rgb(22,32,44); --edge: rgba(255,255,255,.22);
   --frame: rgba(190,225,255,.9); --shade: rgba(0,0,0,.35); --ok: #5fd39b; --bad: #ff8a80; --accent: #7cb8ff;
 }
 * { box-sizing: border-box; }
@@ -22,8 +22,8 @@ body {
   display: grid; grid-template-rows: auto 1fr auto; gap: 8px;
 }
 .pane {
-  padding: 8px 10px; border-radius: 14px; border: 1px solid var(--edge); background: var(--pane);
-  box-shadow: inset 0 1px 0 var(--edge), 0 6px 18px var(--shade); backdrop-filter: blur(16px) saturate(1.5);
+  min-height: 0; padding: 8px 10px; border-radius: 14px; border: 1px solid var(--edge); background: var(--pane);
+  box-shadow: inset 0 1px 0 var(--edge), 0 6px 18px var(--shade);
 }
 header { display: grid; gap: 6px; }
 .status { display: flex; align-items: center; gap: 8px; }
@@ -51,7 +51,11 @@ button:hover { background: rgba(255,255,255,.36); }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button:disabled { opacity: .45; cursor: default; }
 button[data-current="true"] { border-color: var(--accent); }
-#scan { font-weight: 600; justify-self: stretch; }
+#scan { font-weight: 600; flex: 1; }
+.phone { display: grid; grid-template-rows: 1fr auto; gap: 6px; min-height: 0; justify-items: center; }
+.phone[hidden], .viewfinder[hidden] { display: none; }
+#screen { max-width: 100%; max-height: 100%; min-height: 0; object-fit: contain; border-radius: 10px; cursor: crosshair; }
+#view[aria-pressed="true"] { border-color: var(--accent); }
 .message { color: var(--bad); margin: 0; overflow-wrap: anywhere; }
 </style>
 </head>
@@ -69,8 +73,18 @@ button[data-current="true"] { border-color: var(--accent); }
   </div>
 </header>
 <div class="viewfinder" id="viewfinder"></div>
+<div class="phone pane" id="phone" hidden>
+  <img id="screen" alt="手机虚拟屏幕">
+  <div class="actions">
+    <button type="button" id="back">返回</button>
+    <button type="button" id="confirm">确认登录</button>
+  </div>
+</div>
 <footer class="pane">
-  <button type="button" id="scan" disabled>扫码</button>
+  <div class="actions">
+    <button type="button" id="scan" disabled>扫码</button>
+    <button type="button" id="view" aria-pressed="false">手机画面</button>
+  </div>
   <p class="message" id="message" role="alert"></p>
 </footer>
 <script type="module" src="./assets/runtime.mjs"></script>
