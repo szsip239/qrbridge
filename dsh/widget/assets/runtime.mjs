@@ -5,6 +5,8 @@ const bridge = window.MosaicWidget;
 const $ = id => document.getElementById(id);
 const buttons = [...document.querySelectorAll('button')];
 let busy = false;
+let running = false;
+let phoneTimer;
 
 function syncButtons() {
   for (const button of buttons) button.disabled = busy || button.dataset.blocked === 'true';
@@ -16,7 +18,14 @@ function viewfinder() {
   return { x: left + inset, y: top + inset, width: width - 2 * inset, height: height - 2 * inset };
 }
 
+function notice(last) {
+  if (!last) return '';
+  if (!last.ok) return `${last.name} 失败：${last.message}`;
+  return last.result.opened?.includes('DoubleAppResolver') ? '出现分身选择框：请在手机画面里选原版 App' : '';
+}
+
 function render(snapshot) {
+  running = snapshot.running;
   $('dot').dataset.on = snapshot.running;
   $('state').textContent = snapshot.running ? `运行中 · ${names[snapshot.target] ?? '未指定 App'}` : '未运行';
   $('detail').textContent = snapshot.running
@@ -27,8 +36,11 @@ function render(snapshot) {
     button.dataset.blocked = button.dataset.package ? snapshot.running : !snapshot.running;
   }
   syncButtons();
-  const failure = snapshot.last && !snapshot.last.ok ? `${snapshot.last.name} 失败：${snapshot.last.message}` : '';
-  $('message').textContent = failure;
+  $('message').textContent = notice(snapshot.last);
+  if (!snapshot.running) {
+    setPhoneView(false);
+    $('screen').removeAttribute('src');
+  }
 }
 
 function present({ safeArea }) {
@@ -47,11 +59,10 @@ document.documentElement.dataset.mosaicTheme = bridge.theme?.mode ?? 'light';
 present(bridge.presentation);
 bridge.onPresentationChange(present);
 for (const button of document.querySelectorAll('[data-package]')) {
-  button.addEventListener('click', () => controller.up(button.dataset.package));
+  button.addEventListener('click', () => controller.up(button.dataset.package).then(() => running && setPhoneView(true)));
 }
 $('down').addEventListener('click', () => controller.down());
 
-let phoneTimer;
 async function showScreen() {
   $('screen').src = (await controller.screen()).image;
 }
@@ -77,5 +88,4 @@ $('screen').addEventListener('click', event => {
   }).then(showScreen);
 });
 $('back').addEventListener('click', () => controller.back().then(showScreen));
-$('confirm').addEventListener('click', () => controller.confirm().then(showScreen));
 controller.refresh().catch(error => { $('message').textContent = `读取失败：${error.message}`; });

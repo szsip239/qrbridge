@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 export const targets = {
@@ -6,28 +5,24 @@ export const targets = {
   'com.eg.android.AlipayGphone': '支付宝',
 };
 
-export function findText(node, text) {
-  if (node === null || typeof node !== 'object') return undefined;
-  if (node.text === text) return node;
-  for (const child of Object.values(node)) {
-    const found = findText(child, text);
-    if (found) return found;
-  }
-  return undefined;
-}
-
 export function createOwner({ run, logDir, capture, windowFrame, toJpeg, now = () => new Date() }) {
   let target = null;
   let last = null;
+  let inFlight = null;
 
   async function record(name, job) {
+    // Each action is several adb calls; a second click must not interleave with the first.
+    if (inFlight) throw new Error(`“${inFlight}”还在进行`);
+    inFlight = name;
     try {
       const result = await job();
-      last = { name, ok: true, at: now().toISOString() };
+      last = { name, ok: true, at: now().toISOString(), result };
       return result;
     } catch (error) {
       last = { name, ok: false, message: error.message, at: now().toISOString() };
       throw error;
+    } finally {
+      inFlight = null;
     }
   }
 
@@ -42,9 +37,9 @@ export function createOwner({ run, logDir, capture, windowFrame, toJpeg, now = (
     },
     up({ package: name }) {
       return record('up', async () => {
-        await run(['up', name]);
+        const { launch } = await run(['up', name]);
         target = name;
-        return { started: true };
+        return { started: true, opened: launch.match(/^Activity: (.+)$/m)[1] };
       });
     },
     scan({ placementId, x, y, width, height }) {
@@ -71,17 +66,6 @@ export function createOwner({ run, logDir, capture, windowFrame, toJpeg, now = (
     back() {
       return record('back', async () => {
         await run(['key', 'KEYCODE_BACK']);
-        return { tapped: true };
-      });
-    },
-    confirm() {
-      return record('confirm', async () => {
-        const tree = join(logDir, 'tree.json');
-        await run(['tree', tree]);
-        const button = findText(JSON.parse(await readFile(tree, 'utf8')), '确认登录');
-        if (!button) throw new Error('当前画面没有“确认登录”按钮');
-        const [left, top, right, bottom] = button.bounds.split(' ').map(Number);
-        await run(['tap', String(Math.round((left + right) / 2)), String(Math.round((top + bottom) / 2))]);
         return { tapped: true };
       });
     },

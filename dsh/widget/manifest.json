@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "id": "qrbridge.scan",
-  "version": "0.1.9",
+  "version": "0.1.11",
   "title": "扫码",
   "description": "把电脑上的二维码送进安卓手机的虚拟摄像头。",
   "entry": "index.html",
@@ -99,11 +99,6 @@
         "additionalProperties": false
       },
       "qrbridge.back": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": false
-      },
-      "qrbridge.confirm": {
         "type": "object",
         "properties": {},
         "additionalProperties": false

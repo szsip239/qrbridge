@@ -20,9 +20,12 @@ test('bridge CLI passes the serial and surfaces the last stderr line on failure'
 
 test('up and down track the target and save the host log under logDir', async () => {
   const calls = [];
-  const owner = createOwner({ run: async args => { calls.push(args); return {}; }, logDir: '/logs', now });
+  const launch = 'Status: ok\nActivity: com.vivo.doubleinstance/.DoubleAppResolverActivity\nComplete';
+  const owner = createOwner({ run: async args => { calls.push(args); return args[0] === 'up' ? { launch } : {}; }, logDir: '/logs', now });
   await owner.up({ package: 'com.tencent.mm' });
-  assert.equal((await owner.snapshot()).target, 'com.tencent.mm');
+  const snapshot = await owner.snapshot();
+  assert.equal(snapshot.target, 'com.tencent.mm');
+  assert.equal(snapshot.last.result.opened, 'com.vivo.doubleinstance/.DoubleAppResolverActivity');
   await owner.down();
   assert.deepEqual(calls.at(-1), ['down', '/logs/host-2026-11-15T12-00-00.000Z.log']);
   assert.equal((await owner.snapshot()).target, null);
@@ -58,21 +61,12 @@ test('scan refuses a card that is not open as a window', async () => {
   await assert.rejects(owner.scan({ placementId: 'p', x: 0, y: 0, width: 1, height: 1 }), /置顶小窗/);
 });
 
-test('confirm taps the centre of the 确认登录 node in the control tree', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'qrbridge-'));
-  const calls = [];
-  const tree = { display_id: 5, windows: [{ text: null, children: [
-    { text: '即将在电脑上登录', bounds: '0 609 720 696' },
-    { text: '确认登录', bounds: '30 873 690 1002', clickable: true },
-  ] }] };
-  const run = async args => {
-    calls.push(args);
-    if (args[0] === 'tree') await writeFile(args[1], JSON.stringify(tree));
-    return {};
-  };
-  const owner = createOwner({ run, logDir: dir, now });
-  await owner.confirm();
-  assert.deepEqual(calls.at(-1), ['tap', '360', '938']);
-  const empty = createOwner({ run: async args => { if (args[0] === 'tree') await writeFile(args[1], '{"windows":[null]}'); return {}; }, logDir: dir, now });
-  await assert.rejects(empty.confirm(), /确认登录/);
+test('a second action is refused while the first is still running', async () => {
+  const { promise, resolve } = Promise.withResolvers();
+  const owner = createOwner({ run: () => promise, logDir: '/logs', now });
+  const first = owner.down();
+  await assert.rejects(owner.down(), /还在进行/);
+  resolve({});
+  await first;
+  assert.equal((await owner.snapshot()).last.ok, true);
 });

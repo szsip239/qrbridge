@@ -18,7 +18,9 @@ export const actions = {
   'qrbridge.up': {
     input: { type: 'object', additionalProperties: false,
       properties: { package: { type: 'string', enum: Object.keys(targets) } }, required: ['package'] },
-    output: done('started'), effect: 'write', connections: [], errors: [],
+    output: { type: 'object', additionalProperties: false,
+      properties: { started: { type: 'boolean' }, opened: { type: 'string' } }, required: ['started', 'opened'] },
+    effect: 'write', connections: [], errors: [],
   },
   'qrbridge.down': { input: emptyObject, output: done('stopped'), effect: 'write', connections: [], errors: [] },
   'qrbridge.screen': {
@@ -32,7 +34,6 @@ export const actions = {
     output: done('tapped'), effect: 'write', connections: [], errors: [],
   },
   'qrbridge.back': { input: emptyObject, output: done('tapped'), effect: 'write', connections: [], errors: [] },
-  'qrbridge.confirm': { input: emptyObject, output: done('tapped'), effect: 'write', connections: [], errors: [] },
   'qrbridge.scan': {
     input: { type: 'object', additionalProperties: false,
       properties: { placementId: { type: 'string', minLength: 1 }, ...viewfinder.properties }, required: ['placementId', ...viewfinder.required] },
@@ -56,7 +57,6 @@ export function createCapabilityAdapter(owner) {
     'qrbridge.screen': () => owner.screen(),
     'qrbridge.tap': input => owner.tap(input),
     'qrbridge.back': () => owner.back(),
-    'qrbridge.confirm': () => owner.confirm(),
   };
   return {
     async health() { return { status: 'healthy' }; },

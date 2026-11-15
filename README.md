@@ -31,10 +31,9 @@ python3 bridge.py down .local/host.txt
 
 | 动作 | 作用 |
 | --- | --- |
-| `qrbridge.status`、`qrbridge.up`、`qrbridge.down` | 主机状态、为微信／支付宝启动、结束并保存日志 |
+| `qrbridge.status`、`qrbridge.up`、`qrbridge.down` | 主机状态、为微信／支付宝启动（返回虚拟屏幕上打开的活动，vivo 双开选择框需在手机画面选原版）、结束并保存日志 |
 | `qrbridge.scan` | 截取卡片透明取景框下的屏幕区域并 `image` 送入虚拟相机 |
 | `qrbridge.screen`、`qrbridge.tap`、`qrbridge.back` | 读取虚拟屏幕画面、按画面坐标点击、返回键 |
-| `qrbridge.confirm` | 在控件树中找“确认登录”并点击其中心；微信确认页控件树为空，改用画面点击 |
 
 卡片 `qrbridge.scan` 声明 `uiHints.windowBackground: "transparent"`，须开成置顶 Widget Window 使用：取景框坐标加上 `@mosaic/dsh-native-probe` 提供的 `mosaicNativeSurfaces.widgetWindowFrame` 得到屏幕区域，由 `/usr/sbin/screencapture` 截取，DSH 需要 macOS“屏幕录制”权限。依赖 OpenKanban 的透明 Widget Window 与窗口坐标改动，尚未随 Host 发布。插件配置：
 
