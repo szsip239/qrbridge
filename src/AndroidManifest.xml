@@ -1,0 +1,13 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="local.qrbridge.probe">
+  <uses-permission android:name="android.permission.CAMERA" />
+  <uses-feature android:name="android.hardware.camera" android:required="false" />
+  <application android:label="二维码桥接探针" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:allowBackup="false">
+    <activity android:name=".ProbeActivity" android:exported="true" android:resizeableActivity="true">
+      <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+    </activity>
+    <activity android:name=".ProbeActivity$SingleInstance" android:exported="false" android:launchMode="singleInstance" android:resizeableActivity="true" />
+    <activity android:name=".ProbeActivity$NewTask" android:exported="false" android:taskAffinity="local.qrbridge.probe.newtask" android:resizeableActivity="true" />
+    <activity android:name=".ProbeActivity$PortraitTask" android:exported="false" android:launchMode="singleTask" android:screenOrientation="portrait" android:resizeableActivity="true" />
+    <activity android:name=".ProbeActivity$Unresizable" android:exported="false" android:taskAffinity="local.qrbridge.probe.unresizable" android:screenOrientation="portrait" android:resizeableActivity="false" />
+  </application>
+</manifest>
