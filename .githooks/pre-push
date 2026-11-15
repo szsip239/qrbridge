@@ -1,0 +1,9 @@
+#!/bin/sh
+# Lint and run the tests for commits no remote branch has yet. Copied from szsip239/smart-coding templates/pre-push.
+set -e
+remote=$(git for-each-ref --format='%(objectname)' refs/remotes)
+base=HEAD
+[ -z "$remote" ] || base=$(git merge-base HEAD $remote)
+# git exports GIT_DIR to hooks; left set, a test's own `git init` or commit would land in this repo.
+unset $(git rev-parse --local-env-vars)
+exec scripts/agent-check diff --base "$base"
