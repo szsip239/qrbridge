@@ -3,7 +3,7 @@ import { createController } from './controller.mjs';
 const names = { 'com.tencent.mm': '微信', 'com.eg.android.AlipayGphone': '支付宝' };
 const bridge = window.MosaicWidget;
 const $ = id => document.getElementById(id);
-const buttons = [...document.querySelectorAll('button')];
+const buttons = [...document.querySelectorAll('.actions button')];
 let busy = false;
 
 function syncButtons() {

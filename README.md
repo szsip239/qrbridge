@@ -25,6 +25,20 @@ python3 bridge.py down .local/host.txt
 
 `up` 依次执行 `start`、等待日志出现 `READY`（30 秒超时并附原始日志）、`status`、`grant-camera`，再用该包的启动器活动在虚拟屏幕 `launch`，一次输出全部结果。之后在虚拟屏幕进入 App 的扫一扫；码过期就重新 `image`。`down` 先保存主机日志，再 `stop` 并删除手机端临时目录。上次未清理的 association 仍会让 `up` 报错，此时先 `stop`。
 
+## DSH 卡片
+
+`dsh/` 是 DSH 插件 `@qrbridge/dsh-qrbridge`：注册能力 `qrbridge.bridge`，动作 `qrbridge.status`、`qrbridge.up`、`qrbridge.down` 均调用本仓库 `bridge.py`；卡片 `qrbridge.scan` 显示主机状态，提供微信／支付宝启动与结束。规格与切片见 issue #1。插件配置：
+
+```yaml
+- id: qrbridge
+  config:
+    bridge: /绝对路径/bridge.py
+    logDir: /绝对路径/日志目录   # down 保存主机日志的位置
+    serial: 可选的 ADB 设备标识
+```
+
+`cd dsh && npm pack` 生成安装包，在开发实例按 `dsh plugin --profile <名称> add <tgz>` 安装；稳定桌面只经 `dsh-deploy` 部署。测试：`cd dsh && npm test`。
+
 ## 构建与首次运行
 
 ```sh
