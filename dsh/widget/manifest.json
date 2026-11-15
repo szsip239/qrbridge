@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 2,
+  "id": "qrbridge.scan",
+  "version": "0.1.0",
+  "title": "扫码",
+  "description": "把电脑上的二维码送进安卓手机的虚拟摄像头。",
+  "entry": "index.html",
+  "mark": "扫",
+  "defaults": { "config": {}, "data": { "main": {} }, "state": {} },
+  "schemas": {
+    "config": { "type": "object", "properties": {}, "additionalProperties": false },
+    "state": { "type": "object", "properties": {}, "additionalProperties": false },
+    "data": {
+      "type": "object", "properties": { "main": { "type": "object", "properties": {}, "additionalProperties": false } },
+      "required": ["main"], "additionalProperties": false
+    },
+    "intents": {
+      "qrbridge.status": { "type": "object", "properties": {}, "additionalProperties": false },
+      "qrbridge.up": {
+        "type": "object", "properties": { "package": { "type": "string", "enum": ["com.tencent.mm", "com.eg.android.AlipayGphone"] } },
+        "required": ["package"], "additionalProperties": false
+      },
+      "qrbridge.down": { "type": "object", "properties": {}, "additionalProperties": false }
+    }
+  },
+  "uiHints": { "defaultSize": "regular", "preferredSize": { "w": 2, "h": 4 }, "inspector": {} },
+  "permissions": { "network": [] }
+}

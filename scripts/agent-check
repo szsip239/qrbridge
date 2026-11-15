@@ -26,9 +26,11 @@ LINTERS = [
 ]
 # Commands that must exit 0, run after linting in diff and full modes. May instead be a function
 # CHECKS(files) returning commands for the changed files; files is None in full mode.
-CHECKS = [
-    ['python3', 'bridge.py', '--help'],
-]
+def CHECKS(files):
+    commands = [['python3', 'bridge.py', '--help']]
+    if files is None or any(path.startswith('dsh/') for path in files):
+        commands.append(['sh', '-c', 'cd dsh && node --test tests/*.test.mjs'])
+    return commands
 # --- end config ---
 
 FINDING = re.compile(r'^(.+?):(\d+)(?::\d+)?:\s')

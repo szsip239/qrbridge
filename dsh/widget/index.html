@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>扫码</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --fg: #10202c; --muted: #4d6170; --glass: rgba(255,255,255,.42); --edge: rgba(255,255,255,.75);
+  --tint: linear-gradient(135deg, rgba(186,226,255,.55), rgba(232,214,255,.45));
+  --ok: #0f7a4f; --bad: #b3261e; --accent: #0b63c9;
+}
+:root[data-mosaic-theme="dark"] {
+  --fg: #e8f1f8; --muted: #a9bccb; --glass: rgba(20,32,44,.45); --edge: rgba(255,255,255,.18);
+  --tint: linear-gradient(135deg, rgba(40,80,120,.55), rgba(70,50,110,.45));
+  --ok: #5fd39b; --bad: #ff8a80; --accent: #7cb8ff;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "PingFang SC", system-ui, sans-serif; color: var(--fg);
+  background: var(--tint); padding: var(--safe-top, 28px) var(--safe-right, 10px) var(--safe-bottom, 10px) var(--safe-left, 10px);
+}
+main {
+  height: 100%; display: grid; grid-template-rows: auto auto 1fr; gap: 10px; padding: 12px;
+  border-radius: 16px; border: 1px solid var(--edge); background: var(--glass);
+  box-shadow: inset 0 1px 0 var(--edge), 0 8px 24px rgba(0,0,0,.12); backdrop-filter: blur(18px) saturate(1.4);
+}
+header { display: flex; align-items: center; gap: 8px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot[data-on="true"] { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.state { font-weight: 600; }
+.detail { color: var(--muted); margin-left: auto; text-align: right; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+button {
+  font: inherit; color: var(--fg); padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--edge); background: rgba(255,255,255,.18);
+}
+button:hover { background: rgba(255,255,255,.32); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: .5; cursor: default; }
+button[data-current="true"] { border-color: var(--accent); }
+.message { color: var(--bad); overflow-wrap: anywhere; }
+.message:empty { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="dot" id="dot"></span>
+    <span class="state" id="state">读取中</span>
+    <span class="detail" id="detail"></span>
+  </header>
+  <div class="actions">
+    <button type="button" data-package="com.tencent.mm">微信</button>
+    <button type="button" data-package="com.eg.android.AlipayGphone">支付宝</button>
+    <button type="button" id="down">结束</button>
+  </div>
+  <p class="message" id="message" role="alert"></p>
+</main>
+<script type="module" src="./assets/runtime.mjs"></script>
+</body>
+</html>

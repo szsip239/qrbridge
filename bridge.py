@@ -31,7 +31,10 @@ class Bridge:
         try:
             with socket.create_connection(('127.0.0.1', port), timeout=20) as connection:
                 connection.sendall((json.dumps(dict(command=command, **values)) + '\n').encode())
-                result = json.loads(connection.makefile('rb').readline())
+                line = connection.makefile('rb').readline()
+            if not line:
+                raise RuntimeError('主机未运行或已断开：桥接端口没有回应')
+            result = json.loads(line)
             if 'error' in result:
                 raise RuntimeError(result['error'])
             return result
