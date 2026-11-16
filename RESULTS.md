@@ -284,3 +284,22 @@ paired、unplugged、rebooted 码分别为 `android-qr-bridge:round7:paired:2026
 | 清理 | 主机进程、association、手机临时目录、虚拟设备均已清除；活动转储未列出支付宝任务，落点未证实（`D-cleanup/`）。 |
 
 **根因：送入的图片在识别后仍留在虚拟相机。** 每次重开扫一扫都立即扫到上一张码并进入确认页，确认的是已失效的网页会话；首次未登录的原因未单独证实。修复（`f55231f`，待实机复测）：最后一个相机流关闭时主机丢弃图片；卡片在没有相机流时拒绝送码，送码后最多等 10 秒，看扫码页是否关闭相机流，报告“已识别／未识别”，并回到手机画面。
+
+## round11：手机只走移动网络，经 Tailscale 连接 ADB
+
+2026-11-16，同一台未 root 的 Android 16 真机。手机关掉 WiFi、拔掉 USB 后，Mac 经 Tailscale 连上手机的 adbd，**`bridge.py` 的主机启动、状态、送码、控件树和停止全部成功**。本轮没有打开任何业务 App。原始证据仅存于 `.local/accept/round11/`。
+
+用户授权本轮临时使用传统 TCP（`adb tcpip 5555`），本轮结束前用 `adb usb` 切回。基线实际是原生无线调试的 transport，不是 USB。`tailscale ping` 显示直连（未经中继），延迟 102 ms。
+
+| 操作（`--serial` 为手机 tailnet 地址:5555） | 中位数 s | 最大值 s | 结果 |
+| --- | --- | --- | --- |
+| `start`（含推送 bridge.jar） | 0.643 | 0.643 | `log` 中出现 READY |
+| `status` ×3 | 0.139 | 0.149 | 成功 |
+| `image` ×3 | 0.143 | 0.145 | 成功 |
+| `tree` ×1 | 0.152 | 0.152 | 成功 |
+| `screenshot` ×3 | 0.139 | 0.139 | 失败：虚拟屏幕上没有 App，所以没有画面；截图链路未证实 |
+| `stop` | 0.469 | 0.469 | association 已移除，手机临时目录已删除 |
+
+恢复：经 USB 执行 `adb usb` 并断开 5555。到恢复时，原生无线调试已经被关闭（`adb_wifi_enabled` 1→0），无线 transport 和 mDNS 服务都消失了；本轮没有区分这是关 WiFi 导致的，还是 `adb tcpip` 导致的。用户在开发者选项里重新打开“无线调试”后，原有配对仍在，无线 transport 和 mDNS 服务恢复，无需重新配对。`persist.adb.tcp.port` 前后均为空；`service.adb.tcp.port` 从空变为 `adb usb` 写入的 0，没有传统 TCP 监听。切换网络后，手机的 Tailscale 接口从 `tun0` 变成了 `tun1`，所以按接口名查 tailnet 地址不可靠。
+
+结论：只走移动网络时，经 Tailscale 的 ADB 足够快，可以支撑主机控制命令；但切换 `tcpip` 模式或关掉 WiFi 之后，必须由用户在手机上重新打开一次无线调试。
