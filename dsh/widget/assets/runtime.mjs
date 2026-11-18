@@ -62,15 +62,20 @@ async function fitWindow(open) {
   if (windowed) await resize(open);
 }
 
+const unfolded = () => document.body.dataset.fold === 'open';
+
 async function unfold() {
-  if (document.body.dataset.fold === 'open') return;
+  if (unfolded()) return;
   await fitWindow(true);
   document.body.dataset.fold = 'open';
+  feed();
+  pollBackdrop();
 }
 
 async function fold() {
   if (document.body.dataset.fold === 'folded') return;
   document.body.dataset.fold = 'folded';
+  unfeed();
   await sleep(FOLD_MS);
   if (document.body.dataset.fold === 'folded') await fitWindow(false);
 }
@@ -79,9 +84,10 @@ const showError = failed('小窗调整失败');
 
 // The whole unfolded screen is the glass: the desktop under it is captured (card excluded) for the frosted
 // backdrop and, while the phone host runs, fed to the phone camera, whose app previews the centre 9:16 strip.
+// Folded, the cover hides the glass, so nothing is captured.
 function feed() {
   const { left, top, width, height } = $('stage').getBoundingClientRect();
-  if (!windowed || !visible || !width) return;
+  if (!windowed || !visible || !width || !unfolded()) return;
   feeding = true;
   // y counts from the card's bottom edge, which stays put while the window grows upward under the Host strip.
   controller.feed({ x: left, y: top - innerHeight, width, height });
@@ -129,7 +135,7 @@ async function loop(name, active, step) {
 }
 
 function pollBackdrop() {
-  loop('backdrop', () => !running, async () => {
+  loop('backdrop', () => !running && unfolded(), async () => {
     const { image } = await controller.backdrop();
     if (image) for (const glass of document.querySelectorAll('.glass')) glass.src = image;
   });
@@ -170,6 +176,8 @@ function render(snapshot) {
   if (snapshot.running) {
     running = true;
     document.body.dataset.state = 'running';
+    // A window reopened while the host runs comes back to the phone screen, and resumes feeding the camera.
+    unfold().catch(showError);
     pollScreen();
     return;
   }

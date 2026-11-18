@@ -104,3 +104,21 @@ test('a second action is refused while the first is still running', async () => 
   await first;
   assert.equal((await owner.snapshot()).last.ok, true);
 });
+
+test('concurrent feeds keep one capture open, each stopping the one before', async () => {
+  let open = 0, most = 0;
+  const openCapture = async () => {
+    open += 1;
+    most = Math.max(most, open);
+    await new Promise(resolve => setTimeout(resolve, 5));
+    return async () => { open -= 1; };
+  };
+  const windowFrame = async () => ({ x: 0, y: 0, width: 320, height: 300, visible: true });
+  const owner = createOwner({ run: async () => ({}), logDir: '/logs', logFailure, now, windowFrame, openCapture });
+  const region = { placementId: 'qrbridge.scan', x: 0, y: -300, width: 320, height: 300 };
+  await Promise.all([owner.feed(region), owner.feed(region), owner.feed(region)]);
+  assert.equal(open, 1);
+  assert.equal(most, 1);
+  await owner.unfeed();
+  assert.equal(open, 0);
+});

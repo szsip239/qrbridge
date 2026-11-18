@@ -60,6 +60,14 @@ export function createOwner({ run, logDir, logFailure, capture, windowFrame, ope
     feed.then(stream => stream?.write(jpeg));
   }
 
+  // ResizeObserver sends several feeds at once; one at a time, each stops the previous capture before opening its own.
+  let captureTurn = Promise.resolve();
+  function oneCapture(step) {
+    const turn = captureTurn.then(step);
+    captureTurn = turn.catch(() => {});
+    return turn;
+  }
+
   async function stopCapture() {
     const open = backdrop;
     backdrop = null;
@@ -136,27 +144,31 @@ export function createOwner({ run, logDir, logFailure, capture, windowFrame, ope
       });
     },
     // Capture runs beside the adb actions, so it does not take the action lock.
-    async feed({ placementId, ...region }) {
-      await stopCapture();
-      const frame = await windowFrame(placementId);
-      if (!frame.visible) throw new Error('玻璃取景需要先把卡片开成置顶小窗');
-      const holder = { latest: null };
-      holder.stop = await openCapture(frame, { ...region, y: frame.height + region.y }, jpeg => {
-        holder.latest = jpeg;
-        forward(jpeg);
+    feed({ placementId, ...region }) {
+      return oneCapture(async () => {
+        await stopCapture();
+        const frame = await windowFrame(placementId);
+        if (!frame.visible) throw new Error('玻璃取景需要先把卡片开成置顶小窗');
+        const holder = { latest: null };
+        holder.stop = await openCapture(frame, { ...region, y: frame.height + region.y }, jpeg => {
+          holder.latest = jpeg;
+          forward(jpeg);
+        });
+        backdrop = holder;
+        return { feeding: true };
       });
-      backdrop = holder;
-      return { feeding: true };
     },
-    async unfeed() {
-      await stopCapture();
-      return { feeding: false };
+    unfeed() {
+      return oneCapture(async () => {
+        await stopCapture();
+        return { feeding: false };
+      });
     },
     backdrop() {
       return { image: backdrop?.latest ? `data:image/jpeg;base64,${backdrop.latest.toString('base64')}` : '' };
     },
     async close() {
-      await stopCapture();
+      await oneCapture(stopCapture);
       await stopStreams();
     },
     async screen() {

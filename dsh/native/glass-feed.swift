@@ -29,7 +29,11 @@ final class Feed: NSObject, SCStreamOutput {
   }
 
   func stream(_ stream: SCStream, didOutputSampleBuffer buffer: CMSampleBuffer, of type: SCStreamOutputType) {
-    guard let pixels = buffer.imageBuffer, let bounds = windows(.optionIncludingWindow, window).first?.1 else { return }
+    guard let pixels = buffer.imageBuffer else { return }
+    // The card window closed or was hidden: nobody is left to see the glass. Showing it again feeds afresh.
+    guard let info = (CGWindowListCopyWindowInfo(.optionIncludingWindow, window) as! [[String: Any]]).first,
+      info[kCGWindowIsOnscreen as String] as? Bool == true else { exit(0) }
+    let bounds = CGRect(dictionaryRepresentation: info[kCGWindowBounds as String] as! CFDictionary)!
     let image = CIImage(cvPixelBuffer: pixels)
     let scale = image.extent.width / display.width
     let top = (bounds.maxY - frame.height + region.minY - display.minY) * scale
