@@ -110,8 +110,10 @@ export async function apply(ctx, config) {
       }, createCapabilityAdapter(owner), { actionsWithoutDataDelivery: Object.keys(actions).filter(name => actions[name].effect === 'write') });
       resources.defer(() => owner.close());
       resources.defer(() => capability.dispose());
-      const library = await registerWidgetLibrary(ctx.mosaicBoard);
-      resources.defer(() => library.dispose());
+      // ADR-0053: activation does not wait for the Board to accept the library.
+      const library = registerWidgetLibrary(ctx.mosaicBoard);
+      library.catch(error => ctx.logger('qrbridge').error(error));
+      resources.defer(async () => (await library).dispose());
       return () => resources.disposeAsync();
     } catch (error) {
       await resources.disposeAsync();
