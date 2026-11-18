@@ -5,7 +5,7 @@ const plugin = JSON.parse(await readFile(new URL('../package.json', import.meta.
 
 export async function registerWidgetLibrary(board) {
   const root = new URL('../widget/', import.meta.url);
-  const paths = ['manifest.json', 'index.html', 'assets/runtime.mjs', 'assets/controller.mjs'];
+  const paths = ['manifest.json', 'index.html', 'assets/runtime.mjs', 'assets/controller.mjs', 'assets/input.mjs'];
   const files = await Promise.all(paths.map(async path => ({ path, bytes: [...await readFile(new URL(path, root))] })));
   const widget = JSON.parse(Buffer.from(files[0].bytes).toString());
   const manifest = { schemaVersion: 1, kind: 'widget', id: widget.id, version: widget.version, title: widget.title, description: widget.description };

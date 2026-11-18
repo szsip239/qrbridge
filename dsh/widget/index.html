@@ -5,87 +5,198 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>扫码</title>
 <style>
-:root {
-  color-scheme: light dark;
-  --fg: #0e1d29; --muted: #3f5566; --pane: rgb(250,252,255); --edge: rgba(255,255,255,.9);
-  --frame: rgba(255,255,255,.95); --shade: rgba(10,30,50,.18); --ok: #0f7a4f; --bad: #b3261e; --accent: #0b63c9;
-}
-:root[data-mosaic-theme="dark"] {
-  --fg: #ecf3f9; --muted: #a9bccb; --pane: rgb(22,32,44); --edge: rgba(255,255,255,.22);
-  --frame: rgba(190,225,255,.9); --shade: rgba(0,0,0,.35); --ok: #5fd39b; --bad: #ff8a80; --accent: #7cb8ff;
-}
+:root { color-scheme: light dark; --fg: #f6f8fa; --bad: #ff8a80; --r: 30px; --bezel: 4px; }
+/* One progress value per motion so the hinge angle and the glass clearing stay in step with each other. */
+@property --fold { syntax: '<number>'; inherits: true; initial-value: 0; }
+@property --clear { syntax: '<number>'; inherits: true; initial-value: 0; }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; background: transparent; }
+/* A card, not a document: nothing in it selects or drags. */
+body { -webkit-user-select: none; user-select: none; }
+img { -webkit-user-drag: none; }
 body {
-  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "PingFang SC", system-ui, sans-serif; color: var(--fg);
-  padding: var(--safe-top, 28px) var(--safe-right, 8px) var(--safe-bottom, 8px) var(--safe-left, 8px);
-  display: grid; grid-template-rows: auto 1fr auto; gap: 8px;
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "PingFang SC", system-ui, sans-serif; color: var(--fg); overflow: hidden;
+  --fold: 0; --clear: 0;
+  transition: --clear .45s ease-in, --fold .9s cubic-bezier(.5,0,.3,1) .25s;
 }
-.pane {
-  min-height: 0; padding: 8px 10px; border-radius: 14px; border: 1px solid var(--edge); background: var(--pane);
-  box-shadow: inset 0 1px 0 var(--edge), 0 6px 18px var(--shade);
-}
-header { display: grid; gap: 6px; }
-.status { display: flex; align-items: center; gap: 8px; }
-.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
-.dot[data-on="true"] { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
-.state { font-weight: 600; white-space: nowrap; }
-.detail { color: var(--muted); margin: 0; overflow-wrap: anywhere; }
-.detail:empty, .message:empty { display: none; }
-.actions { display: flex; gap: 6px; flex-wrap: wrap; }
-.viewfinder {
-  position: relative; min-height: 120px; border-radius: 18px; border: 2px solid var(--frame);
-  box-shadow: 0 0 0 1px var(--shade), inset 0 0 0 1px var(--shade);
-}
-.viewfinder::before, .viewfinder::after {
-  content: ""; position: absolute; width: 22px; height: 22px; border: 4px solid var(--accent);
-}
-.viewfinder::before { left: -3px; top: -3px; border-right: 0; border-bottom: 0; border-top-left-radius: 18px; }
-.viewfinder::after { right: -3px; bottom: -3px; border-left: 0; border-top: 0; border-bottom-right-radius: 18px; }
-footer { display: grid; gap: 6px; }
+body[data-fold="open"] { --fold: 1; --clear: 1; transition: --fold .95s cubic-bezier(.3,.75,.2,1), --clear 1.15s cubic-bezier(.4,0,.25,1) .1s; }
 button {
-  font: inherit; color: var(--fg); padding: 5px 12px; border-radius: 999px; cursor: pointer;
-  border: 1px solid var(--edge); background: rgba(255,255,255,.2);
+  font: inherit; color: var(--fg); padding: 5px 14px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(255,255,255,.4); background: rgba(255,255,255,.12);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4); backdrop-filter: blur(12px) saturate(1.4);
 }
-button:hover { background: rgba(255,255,255,.36); }
-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button:disabled { opacity: .45; cursor: default; }
-button[data-current="true"] { border-color: var(--accent); }
-#scan { font-weight: 600; flex: 1; }
-.phone { display: grid; grid-template-rows: 1fr auto; gap: 6px; min-height: 0; justify-items: center; }
-.phone[hidden], .viewfinder[hidden] { display: none; }
-#screen { max-width: 100%; max-height: 100%; min-height: 0; object-fit: contain; border-radius: 10px; cursor: crosshair; }
-#view[aria-pressed="true"] { border-color: var(--accent); }
-.message { color: var(--bad); margin: 0; overflow-wrap: anywhere; }
+button:focus-visible { outline: 2px solid #9cc8ff; outline-offset: 2px; }
+
+/* A small foldable shaped like the phone screen: unfolded it fills the box; folded, the window holds only the bottom half.
+   The margin below leaves room for its shadow. */
+.box {
+  position: absolute; left: 50%; translate: -50% 0; --edge: calc(3px + 2 * var(--bezel)); height: 460px; bottom: 34px; container-type: size;
+  /* The screen inside the edge and bezel, not the whole body, takes the phone picture's proportions. */
+  width: calc(var(--aspect, .5625) * (460px - var(--edge)) + var(--edge)); /* A far eye point keeps the swinging lid within a few percent of the body's width, inside the window. */
+  perspective: 2800px; perspective-origin: 50% 100%;
+}
+.device { position: absolute; inset: 0; transform-style: preserve-3d; transform-origin: 50% 100%; transform: rotateX(calc(sin(var(--fold) * 180deg) * 10deg)); }
+
+/* Body of each half: a titanium edge line around a slim black bezel ring; the screen inside is the glass.
+   The hinge side of each half has neither, so the open screen runs unbroken across the fold. */
+.body { position: absolute; border-radius: var(--r); box-shadow: 0 10px 28px rgba(0,0,0,.28); }
+.body::before {
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; border-radius: inherit; padding: 1.5px;
+  background: linear-gradient(135deg, #e9eaec, #8d9096 22%, #f4f5f6 48%, #7c7f85 74%, #d9dadc);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+}
+.bezel { position: absolute; inset: 1.5px; border: var(--bezel) solid rgba(8,9,11,.88); border-radius: calc(var(--r) - 1.5px); }
+.screen { position: absolute; inset: 0; border-radius: calc(var(--r) - 1.5px - var(--bezel)); overflow: hidden; }
+
+/* The lower half spans the hinge until the screen lies flat, then the whole screen. Its geometry follows --fold
+   itself: WebKit applies a delayed zero-length transition at once, which made the open frame show above the cover.
+   Its hinge corners are square only while the lid swings; under the closed lid they round off like the cover's. */
+@property --hinge-r { syntax: '<length>'; inherits: true; initial-value: 0px; }
+/* Literal radii: WebKit drops var() inside keyframes of a registered property. */
+@keyframes hinge-lift { 0%, 12% { --hinge-r: 30px; } 14%, 100% { --hinge-r: 0px; } }
+@keyframes hinge-land { 0%, 55% { --hinge-r: 0px; } 57%, 100% { --hinge-r: 30px; } }
+.frame {
+  --hinge-r: var(--r); --flat: round(down, var(--fold), 1); --top-r: max(var(--hinge-r), var(--flat) * var(--r));
+  left: 0; right: 0; bottom: 0; top: calc(50% * (1 - var(--flat)));
+  border-radius: var(--top-r) var(--top-r) var(--r) var(--r);
+  visibility: hidden; transition: visibility 0s 1.15s; animation: hinge-land 1.15s;
+}
+.frame::before { padding-top: calc(var(--flat) * 1.5px); }
+.frame > .bezel { top: calc(var(--flat) * 1.5px); border-top-width: calc(var(--flat) * var(--bezel));
+  border-radius: max(0px, var(--top-r) - 1.5px) max(0px, var(--top-r) - 1.5px) calc(var(--r) - 1.5px) calc(var(--r) - 1.5px); }
+.frame .screen { border-radius: max(0px, var(--top-r) - 1.5px - var(--bezel)) max(0px, var(--top-r) - 1.5px - var(--bezel))
+  calc(var(--r) - 1.5px - var(--bezel)) calc(var(--r) - 1.5px - var(--bezel)); }
+[data-fold="open"] .frame { visibility: visible; transition: visibility 0s; animation: hinge-lift .95s; }
+.stage { position: absolute; left: 0; right: 0; bottom: 0; height: calc(100cqh - 3px - 2 * var(--bezel)); }
+.stage img, .face img { display: block; }
+.stage img { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* Frosted glass: the desktop behind the card, blurred; it clears as the phone opens and frosts again as it folds. */
+/* The feed is 4:3, wider than the glass; the glass shows its middle. */
+.glass {
+  object-fit: cover;
+  filter: blur(calc((1 - var(--clear)) * 24px)) saturate(calc(1.6 - var(--clear) * .6)) brightness(calc(1.06 - var(--clear) * .06));
+  transform: scale(calc(1.08 - var(--clear) * .08));
+}
+.tint { position: absolute; inset: 0; background: rgba(255,255,255,.1); opacity: calc(1 - var(--clear)); pointer-events: none; }
+/* The lid's shadow on the lower screen, lifting as the lid rises. */
+.cast { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to bottom, rgba(5,6,9,.8), rgba(5,6,9,.35)); opacity: calc(1 - var(--fold)); }
+/* The crease along the hinge, gone once the screen lies flat. */
+.crease { position: absolute; left: 0; right: 0; top: 50%; height: 10px; margin-top: -5px; pointer-events: none;
+  background: linear-gradient(to bottom, transparent, rgba(255,255,255,.18) 45%, rgba(0,0,0,.18) 55%, transparent);
+  opacity: calc(1 - var(--clear)); }
+
+/* The phone screen fades in over the clear glass once the app is up. */
+#mirror { object-fit: contain; opacity: 0; cursor: crosshair; transition: opacity .5s ease, filter .38s cubic-bezier(.2,.7,.2,1), transform .38s cubic-bezier(.2,.7,.2,1); }
+#mirror { touch-action: none; user-select: none; -webkit-user-drag: none; }
+#keyboard { position: absolute; left: 50%; bottom: 40px; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; resize: none; }
+[data-state="running"] #mirror[data-ready="true"] { opacity: 1; }
+
+/* The lid is the top half, hinged on the middle line. Folded, its back (the cover screen) lies over the bottom half. */
+.lid {
+  position: absolute; left: 0; right: 0; top: 0; height: 50cqh; transform-origin: 50% 100%; transform-style: preserve-3d;
+  transform: rotateX(calc((var(--fold) - 1) * 180deg));
+}
+[data-fold="open"] .lid { visibility: hidden; transition: visibility 0s .95s; }
+/* Composited children (the blurred glass) need their own backface rule, or a turned-away face shows through. */
+.face, .face *, .face::before { -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+.face { position: absolute; inset: 0; }
+/* WebKit still draws the edge ring of a face turned away, so each face shows only on its own side of upright. */
+.inner { opacity: round(up, var(--fold) - .5, 1); }
+.outer { opacity: calc(1 - round(up, var(--fold) - .5, 1)); }
+/* Folded, the inner face lies turned away under the cover; keep it out of the picture until the lid lifts.
+   Open, it inherits the lid's hidden, so closing shows it again for the swing (a transition from hidden cannot). */
+[data-fold="folded"] .inner { visibility: hidden; animation: lid-swing 1.15s; }
+@keyframes lid-swing { from, to { visibility: visible; } }
+.face .stage { top: 0; bottom: auto; height: 200%; }
+.inner { border-radius: var(--r) var(--r) 0 0; }
+.inner > .bezel, .inner .screen { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.inner::before { padding-bottom: 0; }
+.inner > .bezel { bottom: 0; border-bottom-width: 0; }
+.inner .shade { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to bottom, rgba(5,6,9,.75), rgba(5,6,9,.3)); opacity: calc((1 - var(--fold)) * 1.4); }
+/* Light catching the glass as the lid turns. */
+.inner .sheen { position: absolute; inset: -40% 0; pointer-events: none;
+  background: linear-gradient(170deg, transparent 35%, rgba(255,255,255,.28) 48%, transparent 60%);
+  transform: translateY(calc((0.5 - var(--fold)) * 120%)); opacity: calc(sin(var(--fold) * 180deg)); }
+.outer { transform: rotateX(180deg); }
+.outer .face-stage { top: -100%; }
+
+/* While an app has the camera open the screen is a see-through viewfinder with a glass rim. */
+.vignette, .rim { position: absolute; inset: 0; pointer-events: none; opacity: 0; }
+.vignette { background: radial-gradient(130% 95% at 62% 58%, transparent 30%, rgba(6,8,12,.62) 100%); transition: opacity .32s ease; }
+.rim {
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.3), inset 0 1.5px 0 rgba(255,255,255,.6), inset 0 0 22px rgba(255,255,255,.12);
+  background: linear-gradient(160deg, rgba(255,255,255,.14), transparent 32%, transparent 72%, rgba(255,255,255,.07));
+  transition: opacity .5s ease;
+}
+[data-glass="frost"] #mirror { filter: blur(18px) brightness(.62) saturate(1.28); transform: scale(1.06); }
+[data-glass="frost"] .vignette { opacity: 1; }
+[data-glass="lift"] #mirror { filter: blur(18px) saturate(1.28); transform: scale(1.06); }
+[data-glass="lift"] .rim, [data-glass="glass"] .rim { opacity: 1; }
+[data-glass="glass"] #mirror { filter: saturate(1.08) brightness(1.03); }
+
+/* Folded: the cover screen is a small desktop. */
+.apps { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(2, auto); place-content: center; gap: 12px 26px; }
+.app { display: grid; justify-items: center; gap: 5px; font-size: 12px; padding: 0; border: 0; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: 0 1px 6px rgba(0,0,0,.35); }
+.app span:first-child {
+  width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-size: 19px; font-weight: 700;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 6px 18px rgba(0,0,0,.25);
+}
+.app[data-package="com.tencent.mm"] span:first-child { background: linear-gradient(160deg, #5be38b, #07c160); }
+.app[data-package="com.eg.android.AlipayGphone"] span:first-child { background: linear-gradient(160deg, #4fa9ff, #1677ff); }
+.app[data-package="com.autonavi.minimap"] span:first-child { background: linear-gradient(160deg, #5fd0ff, #1a8cff); }
+.app[data-package="com.ffcs.js.app"] span:first-child { background: linear-gradient(160deg, #ffb35c, #f07a1a); }
+.app:hover span:first-child { filter: brightness(1.08); }
+
+/* Controls and messages float inside the bottom of the screen. */
+.dock { position: absolute; left: 12px; right: 12px; bottom: 12px; display: grid; justify-items: center; gap: 6px; pointer-events: none; }
+.controls { display: flex; gap: 8px; opacity: 0; transition: opacity .3s ease; }
+[data-fold="open"] .controls { opacity: 1; pointer-events: auto; transition-delay: 1s; }
+[data-state="idle"] #back { display: none; }
+.dock button { padding: 3px 12px; font-size: 12px; background: rgba(20,22,26,.45); }
+.message { color: #fff; margin: 0; padding: 3px 10px; border-radius: 10px; font-size: 11.5px; white-space: nowrap;
+  background: rgba(150,30,30,.72); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.message:empty, [data-fold="folded"] .message { display: none; }
+.message[data-tone="neutral"] { background: rgba(65,68,74,.78); }
 </style>
 </head>
-<body>
-<header class="pane">
-  <div class="status">
-    <span class="dot" id="dot"></span>
-    <span class="state" id="state">读取中</span>
+<body data-state="idle" data-fold="folded" data-glass="off">
+<div class="box" id="box">
+  <div class="device">
+    <div class="body frame"><div class="bezel"><div class="screen">
+      <div class="stage" id="stage">
+        <img id="backdrop" class="glass" alt="">
+        <div class="tint"></div>
+        <div class="cast"></div>
+        <div class="crease"></div>
+        <img id="mirror" alt="手机画面" draggable="false">
+        <textarea id="keyboard" aria-label="手机文字输入" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+        <div class="vignette"></div>
+        <div class="rim"></div>
+      </div>
+    </div></div></div>
+    <div class="lid">
+      <div class="face body inner"><div class="bezel"><div class="screen">
+        <div class="stage face-stage"><img class="glass" alt=""><div class="tint"></div></div>
+        <div class="shade"></div><div class="sheen"></div>
+      </div></div></div>
+      <div class="face body outer"><div class="bezel"><div class="screen">
+        <div class="stage face-stage"><img class="glass" alt=""><div class="tint"></div></div>
+        <div class="apps">
+          <button type="button" class="app" data-package="com.tencent.mm" data-scan><span>微</span><span>微信</span></button>
+          <button type="button" class="app" data-package="com.eg.android.AlipayGphone" data-scan><span>支</span><span>支付宝</span></button>
+          <button type="button" class="app" data-package="com.autonavi.minimap"><span>高</span><span>高德地图</span></button>
+          <button type="button" class="app" data-package="com.ffcs.js.app"><span>工</span><span>工作</span></button>
+        </div>
+      </div></div></div>
+    </div>
   </div>
-  <p class="detail" id="detail"></p>
-  <div class="actions">
-    <button type="button" data-package="com.tencent.mm">微信</button>
-    <button type="button" data-package="com.eg.android.AlipayGphone">支付宝</button>
-    <button type="button" id="down">结束</button>
-  </div>
-</header>
-<div class="viewfinder" id="viewfinder"></div>
-<div class="phone pane" id="phone" hidden>
-  <img id="screen" alt="手机虚拟屏幕">
-  <div class="actions">
-    <button type="button" id="back">返回</button>
+  <div class="dock">
+    <p class="message" id="message" role="alert"></p>
+    <div class="controls"><button type="button" id="back">返回</button><button type="button" id="down">结束</button></div>
   </div>
 </div>
-<footer class="pane">
-  <div class="actions">
-    <button type="button" id="scan" disabled>扫码</button>
-    <button type="button" id="view" aria-pressed="false">手机画面</button>
-  </div>
-  <p class="message" id="message" role="alert"></p>
-</footer>
 <script type="module" src="./assets/runtime.mjs"></script>
 </body>
 </html>
