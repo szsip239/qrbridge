@@ -34,6 +34,12 @@ CHECKS = [
 FINDING = re.compile(r'^(.+?):(\d+)(?::\d+)?:\s')
 NOQA = re.compile(r'#\s*noqa:\s*((?:[A-Z]+\d+[,\s]*)+)(.*)')
 CATCH_RULES = {'BLE001', 'S110', 'S112', 'E722', 'TRY301'}
+SOURCE = ('.py', '.mjs', '.js', '.ts', '.tsx')
+MINIFIED = 1000
+COMMENT = re.compile(r'(?:^|\s)(?:#|//|/\*)|^\s*\*(?:\s|$)')
+EXCUSE = re.compile(r'暂时|先这样|改动太大|临时(?:方案|处理|修复|绕过|兼容)|以后再|后续再|回头再|兜底|'
+                    r'\b(?:for now|temporar(?:y|ily) (?:fix|workaround|hack|solution)|workaround|hack|quick fix|'
+                    r'TODO|FIXME|until we|too (?:big|large|risky) to|just in case|to be safe|for safety)\b', re.I)
 HUNK = re.compile(r'^@@ -\S+ \+(\d+)(?:,(\d+))? @@')
 NEEDS_USER = 3
 
@@ -57,20 +63,39 @@ def changed_lines(base, files):
     return changed
 
 
+def changed_source(files, changed, suffixes):
+    """(path, line number, line, all lines) for each changed line of the existing files with these suffixes."""
+    for f in files:
+        if not f.endswith(suffixes) or not Path(f).is_file():
+            continue
+        try:
+            lines = Path(f).read_text(encoding='utf-8').splitlines()
+        except UnicodeDecodeError:  # a binary file with a source suffix, such as a failed download, is not source
+            continue
+        wanted = changed.get(f, set()) if changed is not None else None
+        for n, line in enumerate(lines, 1):
+            if wanted is None or n in wanted:
+                yield f, n, line, lines
+
+
 def bare_noqa(files, changed):
     """A catch rule silenced without a reason on the same line or in a comment right below it."""
     problems = []
-    for f in files:
-        if not f.endswith('.py') or not Path(f).is_file():
-            continue
-        lines = Path(f).read_text(encoding='utf-8').splitlines()
-        wanted = changed.get(f, set()) if changed is not None else None
-        for n, line in enumerate(lines, 1):
-            m = NOQA.search(line)
-            if (m and CATCH_RULES & set(re.findall(r'[A-Z]+\d+', m.group(1))) and not m.group(2).strip(' #-')
-                    and not (n < len(lines) and lines[n].lstrip().startswith('#'))
-                    and (wanted is None or n in wanted)):
-                problems.append(f'{f}:{n}: NOQA001 捕获类规则被 noqa 关掉却没写原因。在同一行写 `# noqa: 规则  # 哪个调用方需要这个捕获`')
+    for f, n, line, lines in changed_source(files, changed, '.py'):
+        m = NOQA.search(line)
+        if (m and CATCH_RULES & set(re.findall(r'[A-Z]+\d+', m.group(1))) and not m.group(2).strip(' #-')
+                and not (n < len(lines) and lines[n].lstrip().startswith('#'))):
+            problems.append(f'{f}:{n}: NOQA001 捕获类规则被 noqa 关掉却没写原因。在同一行写 `# noqa: 规则  # 哪个调用方需要这个捕获`')
+    return problems
+
+
+def excuse_comments(files, changed):
+    """A comment that defends a stopgap or a guard instead of doing it right."""
+    problems = []
+    for f, n, line, _ in changed_source(files, changed, SOURCE):
+        if len(line) < MINIFIED and (c := COMMENT.search(line)) and (m := EXCUSE.search(line, c.start())):
+            problems.append(f'{f}:{n}: EXCUSE001 注释在替临时或防御性做法找理由（“{m.group(0)}”）。'
+                            '把代码改成该有的做法；确实只能先这样时，停下来向用户说明，不要写进注释')
     return problems
 
 
@@ -92,7 +117,7 @@ def lint(files, base):
             lines = changed.get(path, set()) if changed is not None else None
             if lines is None or int(m.group(2)) in lines:
                 problems.append(line)
-    return problems + bare_noqa(files, changed)
+    return problems + bare_noqa(files, changed) + excuse_comments(files, changed)
 
 
 def run(command):
