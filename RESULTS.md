@@ -303,3 +303,90 @@ paired、unplugged、rebooted 码分别为 `android-qr-bridge:round7:paired:2026
 恢复：经 USB 执行 `adb usb` 并断开 5555。到恢复时，原生无线调试已经被关闭（`adb_wifi_enabled` 1→0），无线 transport 和 mDNS 服务都消失了；本轮没有区分这是关 WiFi 导致的，还是 `adb tcpip` 导致的。用户在开发者选项里重新打开“无线调试”后，原有配对仍在，无线 transport 和 mDNS 服务恢复，无需重新配对。`persist.adb.tcp.port` 前后均为空；`service.adb.tcp.port` 从空变为 `adb usb` 写入的 0，没有传统 TCP 监听。切换网络后，手机的 Tailscale 接口从 `tun0` 变成了 `tun1`，所以按接口名查 tailnet 地址不可靠。
 
 结论：只走移动网络时，经 Tailscale 的 ADB 足够快，可以支撑主机控制命令；但切换 `tcpip` 模式或关掉 WiFi 之后，必须由用户在手机上重新打开一次无线调试。
+
+## round13：不同 Wi-Fi，经 Tailscale 连接原生无线调试
+
+2026-11-17，同一台未 root 的 Android 16 真机。手机连接与 Mac 不同的 Wi-Fi，原生无线调试开启，Mac 成功通过手机 tailnet 地址:端口建立 TLS ADB 连接；USB 同时连接，仅用于只读核实状态及手机页面上的连接端口。手机无线调试服务未被 Mac 的 mDNS 发现，`tailscale ping` 显示跨网络直连（非中继），延迟 27 ms。本轮没有打开业务 App。原始证据仅存于 `.local/accept/round13/`。
+
+| 操作（`--serial` 为手机 tailnet 地址:端口） | 中位数 s | 最大值 s | 结果 |
+| --- | --- | --- | --- |
+| `start`（含推送 bridge.jar） | 0.712 | 0.712 | `log` 中出现 READY |
+| `status` ×3 | 0.152 | 0.171 | 成功 |
+| `image` ×3 | 0.174 | 0.181 | 成功，`image_loaded=true` |
+| `tree` ×1 | 0.195 | 0.195 | 成功；虚拟屏幕没有 App，窗口列表为空 |
+| `stop` | 0.502 | 0.502 | association 已移除，虚拟设备已关闭 |
+
+结束时断开了这条 tailnet ADB 连接，无线调试仍开启（`adb_wifi_enabled=1`）；手机端桥接临时目录仍保留主机 JAR、日志和 PID 文件。此前用户曾遇到无线调试开关自动关闭，但开始本轮时已恢复，未能确定其原因。本轮证实这台手机在不同 Wi-Fi 下可经 Tailscale 使用原生无线调试运行上述主机命令；未验证中继路径或业务扫码。
+
+## round14：5555 唤醒手机验收
+
+2026-11-17，未 root 的 Android 16 vivo 真机，安装 `dev.qrbridge.wake` 0.1.0。安装前开发者选项、USB 调试和无线调试开启，运行时 ADB TCP 端口为 0，持久端口属性为空；首次安装被拒绝，重试时出现系统安全扫描提示，用户随后在手机上完成安装。本轮原始证据仅存于 `.local/accept/wake/`。
+
+| 用例 | 结果与证据 |
+| --- | --- |
+| 首次配对 | 通过：用户完成本机配对并报告成功；随后应用显示成功，系统运行时端口为 5555，监听存在。 |
+| 配对错误与恢复 | 未执行：用户跳过。 |
+| 无线调试已开 | 通过：初始运行时端口为 0；配对后用户操作应用，5555 监听存在、运行时端口为 5555，持久端口属性仍为空。 |
+| 无线调试关闭、无 grant | 通过：未授予权限且无线调试关闭时，应用提示手动开启，并跳转 vivo 开发者选项；开启无线调试并配对后，用户报告成功，监听经系统核实。 |
+| 无线调试关闭、有 grant | 通过：USB 恢复无监听后授予权限，应用自行开启无线调试并显示成功；系统确认 5555 监听，持久端口属性为空。 |
+| 无 Wi-Fi | 有 grant 时通过：确认 Wi-Fi 已关闭后点击，显示连接任意 Wi-Fi 的提示；无 grant 时未执行。 |
+| 别人手机的热点 | 未执行：未确认新 Wi-Fi 是否为另一部手机的热点。 |
+| 重启后的目标场景 | 通过：USB 拔除后重启，用户解锁、连接 Wi-Fi 并点开启；无需重新配对，应用显示成功，系统确认 5555 监听和权限保留。重启后 Tailscale 需在手机上重新连接。 |
+| 蜂窝网络经 Tailscale | 通过：重启前，用户确认仅移动网络，USB 已拔除，系统证据确认 Wi-Fi 关闭；Mac 经 tailnet 连接 5555，`shell id` 返回 shell 身份。 |
+| 重新发现与界面 | 部分通过：在另一 Wi-Fi 上恢复无监听后，系统网络许可出现；首次等待超时，允许后再次点击成功建立监听。未记录新旧连接端口是否不同，未测旋转、分屏中的执行状态或重复请求。 |
+| 系统撤销配对 | 未执行：用户跳过。 |
+
+**本机 5555 接受连接已验收**，**Mac 经蜂窝网络连接已验收**；构建验证另见 `wake/BUILD_REPORT.md`。另测发现，5555 已在监听且 Wi-Fi 可用时，关闭无线调试后再次点击仍提示手动开启无线调试，而非直接报告监听已存在；Wi-Fi 关闭时也仍提示连接 Wi-Fi。新网络的系统许可若在发现超时后才接受，需要再点一次。验收结束时应用已安装且保留配对和权限，5555 监听存在，Mac 可连接；未撤销权限、卸载或关闭监听。
+
+## round15：虚拟屏手机远程桌面可行性
+
+2026-11-17，vivo Android 16，USB ADB，isolated 显示模式；截图、控件树、活动与相机转储和交付帧在 `.local/accept/round15/`。本轮只打开页面，未送码或执行登录、支付、发送。开始前桥接主机无响应但残留 association，保存旧日志后用 `stop` 清理；结束时 `down` 成功移除本轮 association。
+
+| 项目 | 结果 | 证据与范围 |
+| --- | --- | --- |
+| 手机桌面 | 不通 | 依次启动 `SECONDARY_HOME`、`HOME`、vivo 桌面组件和发送 HOME；虚拟屏截图均报无画面、树为空。`SECONDARY_HOME` 的解析器出现在物理屏，vivo 桌面在物理屏；没有虚拟桌面可点击图标，因此无法验证图标启动后的落屏。见 `secondary-*`、`home-*`、`launcher-*`、`keyhome-*`。 |
+| 支付宝直达扫一扫 | 通过 | 指定 URI 后 `MainCaptureActivity` 位于虚拟屏，`media.camera` 记录支付宝连接本轮虚拟相机，状态有一个流；同轮成功采集 640×480 交付帧。见 `alipay-*`。 |
+| 微信直达扫一扫 | 不通 | URI 出现 vivo 原版／分身选择框；选择原版后回到支付宝首页，没有进入微信扫码，虚拟相机无流。见 `wechat-uri-*`、`wechat-result-*`。 |
+| 微信界面进入扫一扫 | 部分通过 | 启动微信并选择原版后，在画面点右上角加号及菜单第三项 Scan，`BaseScanUI` 位于虚拟屏、连接本轮虚拟相机，同轮采集 640×480 交付帧。首页树为空，菜单树有四个同 ID 可点击项但无文字，无法仅凭树可靠识别加号和扫一扫；坐标仅代表本次画面。见 `wechat-main-*`、`wechat-menu-*`、`wechat-scan-*`、`wechat-frame/`。 |
+| 返回／桌面 | 部分通过 | `KEYCODE_BACK` 从支付宝扫码返回支付宝首页，从微信扫码返回微信首页，均留在虚拟屏；在微信首页发送 `KEYCODE_HOME` 后仍为微信首页，未显示桌面。见 `back-*`、`wechat-back-*`、`wechat-home-*`。 |
+
+本轮成功的命令（`DISPLAY_ID` 取 `status`，先为各目标包授予当前虚拟设备的 CAMERA）：
+
+```sh
+python3 bridge.py start
+python3 bridge.py status
+python3 bridge.py grant-camera com.eg.android.AlipayGphone
+adb shell am start --display "$DISPLAY_ID" -a android.intent.action.VIEW -d 'alipays://platformapi/startapp?saId=10000007'
+python3 bridge.py key KEYCODE_BACK
+python3 bridge.py grant-camera com.tencent.mm
+python3 bridge.py launch com.tencent.mm/.ui.LauncherUI
+# 本次选择原版微信后，根据截图点击右上加号及 Scan；坐标不可视为稳定接口。
+python3 bridge.py tap 201 1105
+python3 bridge.py tap 645 67
+python3 bridge.py tap 460 525
+python3 bridge.py capture-frame .local/accept/round15/wechat-frame
+python3 bridge.py down .local/accept/round15/host-final.txt
+```
+
+## round16：open 直达与 5555 唤醒手机验收
+
+2026-11-17，未 root 的 Android 16 vivo 真机，使用 USB 和 Tailscale ADB。原始截图、活动和相机转储、交付帧与调试日志保存在 `.local/accept/round16/`；本轮未送码、登录、付款或发送。
+
+| 项目 | 结果与证据 |
+| --- | --- |
+| 主机新启动与复用 | 通过：无主机时 `started=true`，后续 `started=false`，主机 PID、显示和虚拟设备均未变化；高德地图、`com.ffcs.js.app` 和支付宝的虚拟 CAMERA 权限检查为已授予。 |
+| 普通应用启动 | 通过：高德地图和 `com.ffcs.js.app` 的启动活动均位于虚拟屏，`scanning=false`。 |
+| 支付宝直达扫码 | 通过：无选择框，`MainCaptureActivity` 位于虚拟屏，`media.camera` 记录本轮虚拟相机连接，同轮捕获 640×480 交付帧。首次截图出现系统英文提示，说明应用请求额外安全保护并建议在手机上操作；用户确认这是虚拟屏受保护画面提示并允许继续。复测截图已显示扫码页且无该提示，相机仍连接并交付帧；未测试识码。 |
+| 微信冷启动和热启动直达扫码 | 失败：两次均停在 vivo 英文原版／分身选择框，命令报未进入主界面。手动选择原版后可进入主界面，但再次执行 `open --scan` 仍停在选择框；未到加号、菜单 OCR 或扫码活动，无法采集同轮微信交付帧。截图见 `wechat-cold.png`、`wechat-warm.png`。 |
+| 唤醒应用覆盖升级 | 通过：0.2.0 覆盖安装成功，原有权限保留，用户允许通知和自启动；后续手动开启成功，无需重新配对。 |
+| 已监听时无 Wi-Fi／无 grant | 通过：关闭 Wi-Fi、无线调试为关闭时，已有 5555 监听的按钮显示“5555 已在运行”；临时撤销 grant 后仍显示同一结果，之后已恢复 grant 和 Wi-Fi。 |
+| 无监听且无 Wi-Fi | 通过：有 grant 和无 grant 均显示连接任意 Wi-Fi 的提示；无线调试开关保持关闭。 |
+| 无监听手动开启、恢复开关 | 通过：已配对、有 grant、有 Wi-Fi、无线调试初始关闭时，按钮显示成功，运行时端口为 5555，无线调试恢复为关闭，持久 TCP 属性保持空。 |
+| 开机自动恢复 | 未能单独证实：重启并解锁后用户在检查前打开过应用，开机时段日志已不可用；随后 5555 可连接，但无法区分自动恢复和手动操作。用户决定不再重启复测。未能验证开机通知或任务启动耗时。 |
+| 其他计划用例 | 未执行：无线调试原本开启的保留、无 grant 手动路径、新网络许可超时与重试、开机后晚连 Wi-Fi、单次运行、自动失败或中途断网、手动取消待执行任务、通知拒绝、移动网络经 Tailscale，以及旋转／分屏。未将 Wi-Fi 下的 Tailscale 连接当作蜂窝网络通过。 |
+
+结束时 0.2.0 已安装，用户 0 的 grant 和通知权限保留，5555 运行且可经 Tailscale 执行 shell；无线调试关闭，桥接主机已 `down` 并移除 association。USB 此时未被电脑识别；未修改代码或提交。
+
+微信直达修正后重测：冷启动时自动通过双开选择框并进入虚拟屏微信主界面，但命令报“微信菜单未找到唯一的扫一扫／Scan”，截图显示主界面，未进入扫码页或连接相机；热启动时自动进入 `BaseScanUI`，`media.camera` 显示微信连接本轮虚拟相机，同轮采集到 640×480 交付帧。冷启动失败原因仅能确定为菜单识别未成功，不能据此断言具体时序原因；未送码或执行业务操作。重测证据见 `.local/accept/round16/wechat-retry-*`，结束时 `down` 成功移除主机关联。
+
+微信菜单重试修正后再次验收：先结束微信进程，冷启动和随后热启动的 `open --scan` 均通过，分别返回 `started=true` 和 `started=false`，虚拟屏顶部均为 `BaseScanUI`。两次 `media.camera` 均显示微信连接本轮虚拟相机，且分别采集到 640×480 交付帧；未送码或执行业务操作。证据见 `.local/accept/round16/wechat-retry2-*`；结束时 `down` 成功移除主机关联。
