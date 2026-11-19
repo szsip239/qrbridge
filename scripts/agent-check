@@ -12,6 +12,7 @@ failures are scripts/tla-check exiting 3, which only the user can resolve.
 
 Copied from szsip239/smart-coding templates/agent-check; edit only the config block.
 """
+import ast
 import os
 import re
 import subprocess
@@ -41,6 +42,9 @@ EXCUSE = re.compile(r'暂时|先这样|改动太大|临时(?:方案|处理|修�
                     r'\b(?:for now|temporar(?:y|ily) (?:fix|workaround|hack|solution)|workaround|hack|quick fix|'
                     r'TODO|FIXME|until we|too (?:big|large|risky) to|just in case|to be safe|for safety)\b', re.I)
 HUNK = re.compile(r'^@@ -\S+ \+(\d+)(?:,(\d+))? @@')
+# Rules that report a whole function at its first line, so a change anywhere inside it counts.
+FUNCTION_RULE = re.compile(r':\s(C901|PLR091[125])\s|\((complexity)\)\]$')
+STRINGS_AND_COMMENTS = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|`(?:\\.|[^`\\])*`|//.*')
 NEEDS_USER = 3
 
 
@@ -99,6 +103,28 @@ def excuse_comments(files, changed):
     return problems
 
 
+def brace_end(lines, start):
+    """Line where the first brace opened on or after line start closes."""
+    depth = 0
+    for n, line in enumerate(lines[start - 1:], start):
+        for c in STRINGS_AND_COMMENTS.sub('', line):
+            if c in '{}':
+                depth += 1 if c == '{' else -1
+                if depth == 0:
+                    return n
+    return start
+
+
+def function_lines(path, start):
+    """The lines of the function that starts at line start: ast for Python, braces for JS/TS."""
+    text = Path(path).read_text(encoding='utf-8')
+    if not path.endswith('.py'):
+        return set(range(start, brace_end(text.splitlines(), start) + 1))
+    ends = [n.end_lineno for n in ast.walk(ast.parse(text))
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.lineno == start]
+    return set(range(start, (ends or [start])[0] + 1))
+
+
 def lint(files, base):
     problems = []
     changed = changed_lines(base, files) if base else None
@@ -115,7 +141,8 @@ def lint(files, base):
         for line, m in findings:
             path = Path(m.group(1)).resolve().relative_to(Path.cwd()).as_posix()
             lines = changed.get(path, set()) if changed is not None else None
-            if lines is None or int(m.group(2)) in lines:
+            n = int(m.group(2))
+            if lines is None or n in lines or (FUNCTION_RULE.search(line) and lines & function_lines(path, n)):
                 problems.append(line)
     return problems + bare_noqa(files, changed) + excuse_comments(files, changed)
 
