@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>扫码</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --fg: #0e1d29; --muted: #3f5566; --pane: rgb(250,252,255); --edge: rgba(255,255,255,.9);
+  --frame: rgba(255,255,255,.95); --shade: rgba(10,30,50,.18); --ok: #0f7a4f; --bad: #b3261e; --accent: #0b63c9;
+}
+:root[data-mosaic-theme="dark"] {
+  --fg: #ecf3f9; --muted: #a9bccb; --pane: rgb(22,32,44); --edge: rgba(255,255,255,.22);
+  --frame: rgba(190,225,255,.9); --shade: rgba(0,0,0,.35); --ok: #5fd39b; --bad: #ff8a80; --accent: #7cb8ff;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; background: transparent; }
+body {
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "PingFang SC", system-ui, sans-serif; color: var(--fg);
+  padding: var(--safe-top, 28px) var(--safe-right, 8px) var(--safe-bottom, 8px) var(--safe-left, 8px);
+  display: grid; grid-template-rows: auto 1fr auto; gap: 8px;
+}
+.pane {
+  min-height: 0; padding: 8px 10px; border-radius: 14px; border: 1px solid var(--edge); background: var(--pane);
+  box-shadow: inset 0 1px 0 var(--edge), 0 6px 18px var(--shade);
+}
+header { display: grid; gap: 6px; }
+.status { display: flex; align-items: center; gap: 8px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot[data-on="true"] { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.state { font-weight: 600; white-space: nowrap; }
+.detail { color: var(--muted); margin: 0; overflow-wrap: anywhere; }
+.detail:empty, .message:empty { display: none; }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.viewfinder {
+  position: relative; min-height: 120px; border-radius: 18px; border: 2px solid var(--frame);
+  box-shadow: 0 0 0 1px var(--shade), inset 0 0 0 1px var(--shade);
+}
+.viewfinder::before, .viewfinder::after {
+  content: ""; position: absolute; width: 22px; height: 22px; border: 4px solid var(--accent);
+}
+.viewfinder::before { left: -3px; top: -3px; border-right: 0; border-bottom: 0; border-top-left-radius: 18px; }
+.viewfinder::after { right: -3px; bottom: -3px; border-left: 0; border-top: 0; border-bottom-right-radius: 18px; }
+footer { display: grid; gap: 6px; }
+button {
+  font: inherit; color: var(--fg); padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--edge); background: rgba(255,255,255,.2);
+}
+button:hover { background: rgba(255,255,255,.36); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: .45; cursor: default; }
+button[data-current="true"] { border-color: var(--accent); }
+#scan { font-weight: 600; flex: 1; }
+.phone { display: grid; grid-template-rows: 1fr auto; gap: 6px; min-height: 0; justify-items: center; }
+.phone[hidden], .viewfinder[hidden] { display: none; }
+#screen { max-width: 100%; max-height: 100%; min-height: 0; object-fit: contain; border-radius: 10px; cursor: crosshair; }
+#view[aria-pressed="true"] { border-color: var(--accent); }
+.message { color: var(--bad); margin: 0; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<header class="pane">
+  <div class="status">
+    <span class="dot" id="dot"></span>
+    <span class="state" id="state">读取中</span>
+  </div>
+  <p class="detail" id="detail"></p>
+  <div class="actions">
+    <button type="button" data-package="com.tencent.mm">微信</button>
+    <button type="button" data-package="com.eg.android.AlipayGphone">支付宝</button>
+    <button type="button" id="down">结束</button>
+  </div>
+</header>
+<div class="viewfinder" id="viewfinder"></div>
+<div class="phone pane" id="phone" hidden>
+  <img id="screen" alt="手机虚拟屏幕">
+  <div class="actions">
+    <button type="button" id="back">返回</button>
+  </div>
+</div>
+<footer class="pane">
+  <div class="actions">
+    <button type="button" id="scan" disabled>扫码</button>
+    <button type="button" id="view" aria-pressed="false">手机画面</button>
+  </div>
+  <p class="message" id="message" role="alert"></p>
+</footer>
+<script type="module" src="./assets/runtime.mjs"></script>
+</body>
+</html>

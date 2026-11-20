@@ -1,0 +1,16 @@
+{
+  "name": "@qrbridge/dsh-qrbridge",
+  "version": "0.1.12",
+  "private": true,
+  "type": "module",
+  "description": "DSH card that drives the Android QR virtual camera bridge",
+  "engines": { "node": ">=24" },
+  "exports": { ".": "./src/host.mjs", "./package.json": "./package.json" },
+  "files": ["src", "widget", "cordis.patch.yml"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "scripts": { "test": "node --test tests/*.test.mjs" },
+  "peerDependencies": {
+    "@mosaic/dsh-host": "^0.1.0",
+    "@deepseek-ai/cordis": "^4.0.4"
+  }
+}

@@ -255,3 +255,51 @@ paired、unplugged、rebooted 码分别为 `android-qr-bridge:round7:paired:2026
 | 关卡 6：网页端已登录 | **通过。** 网页进入已登录的支付宝商家平台，随后点击退出登录，页面显示登录入口，关闭独立 task-space；见本地 `web-logged.png`。 |
 
 开始和结束时原生无线调试均开启、配对保留，传统 TCP 两项属性均为空，转发列表一致且为空；原有 companion association 保留，没有残留虚拟设备或手机实验目录。`down-final.txt`、`virtual-final.txt`、`companion-final.txt`、`remote-final.txt` 和前后基线文件记录清理。支付宝重新在 display 0 打开首页，仍处于登录状态；见 `physical-final-activities.txt` 和截图。没有提交 Git。
+
+## DSH 玻璃卡片实机验收：微信（round9）
+
+2026-11-16，USB ADB，独立 DSH home（Host 0.1.17 加透明 Widget Window 改动、helper `0.3.0-native-poc.15`、卡片 `@qrbridge/dsh-qrbridge` 0.1.9）。用户只在 Mac 上操作卡片，手机端由 Terra Worker 只读取证。**微信网页登录整链通过**，原始证据仅存于 Git 忽略的 `.local/accept/round9/`。
+
+| 检查点 | 结果与证据 |
+| --- | --- |
+| 0 预检 | 通过：唯一设备，主机未运行，无本原型 association（`0/`）。 |
+| A 卡片“微信” | 首次未通过：微信任务仍在 display 0 且已停止，虚拟显示为空；主机日志显示 vivo 双开选择框 `DoubleAppResolverActivity` 出现后无人选择、随即 `onDisplayEmpty`（`A/`、`A-diag/`）。“结束”后重按“微信”，在卡片手机画面中选原版微信后通过：`LauncherUI` 为虚拟显示 top，CAMERA 已授予（`A2/`）。物理屏锁屏，虚拟显示 `KeyguardShowing=false`，不影响操作。 |
+| B 扫一扫 | 通过：卡片手机画面中打开扫一扫，`BaseScanUI` 留在虚拟显示，`media.camera` 中微信连接虚拟相机，status 有一个流；送码前 `capture-frame` 640×480（`B/`）。 |
+| C 玻璃窗扫码 | 通过：卡片截取透明取景框下的网页登录码（`dsh-logs/viewfinder.png`，电脑 ZXing 解码成功）并送入；微信进入 `ExtDeviceWXLoginUI`，仍在虚拟显示。确认页为英文界面“Login confirmation / Open File Transfer for Web / Open / Cancel”，无风险提示；控件树为空（`C/`）。 |
+| D 业务结果与清理 | 用户在卡片手机画面点“Open”，网页进入文件传输助手（用户观察），随后网页退出登录；手机 `ChattingUI` 在虚拟显示（`D/`）。“结束”后主机进程不在、association 为零、手机临时目录不存在、无残留虚拟设备；活动转储中已无微信任务（虚拟显示带 `DESTROY_CONTENT_ON_REMOVAL`），未证实微信回到 display 0 或登录状态（`D-cleanup/`）。 |
+
+卡片暴露的问题：`up` 不显示启动结果，双开选择框只能靠手机画面发现；动作执行中按钮仍可点，“结束”被执行两次，第二次在读取已删日志处报错；主机停止后手机画面仍保留最后一帧；“确认登录”按钮只认中文文字且依赖控件树，微信确认页需在手机画面点击。截图含私人聊天内容，只留本地。支付宝未在本轮执行。
+
+## DSH 玻璃卡片实机验收：支付宝（round10）
+
+2026-11-16，同 round9 环境，卡片 0.1.11（`up` 后自动打开手机画面）。**支付宝网页登录在重试后通过**，并暴露了送码残留问题；原始证据仅存于 `.local/accept/round10/`。
+
+| 检查点 | 结果与证据 |
+| --- | --- |
+| 0 预检 | 通过（`0/`）。 |
+| A 卡片“支付宝” | 通过：`.AlipayLogin` 为虚拟显示 top，CAMERA 已授予；本轮没有启动画面停留和双开选择框（`A/`）。 |
+| B 扫一扫 | 通过：`MainCaptureActivity` 留在虚拟显示，连接虚拟相机，送码前 `capture-frame` 640×480（`B/`）。 |
+| C 玻璃窗扫码 | 通过：确认页“即将在电脑上登录／请确认是否本人操作／确认登录／取消”，无风险提示（`C/`）。 |
+| D 业务结果 | 首次点确认后手机回首页，网页停在“扫码成功”，刷新后未登录。用户多次重开扫一扫后，网页进入商家平台工作台，随后退出（协调者在 ego-lite 核对）。主机日志共 4 次扫码活动转入确认页，status 始终 `image_loaded=true`（`D/`、`D2/`）。 |
+| 清理 | 主机进程、association、手机临时目录、虚拟设备均已清除；活动转储未列出支付宝任务，落点未证实（`D-cleanup/`）。 |
+
+**根因：送入的图片在识别后仍留在虚拟相机。** 每次重开扫一扫都立即扫到上一张码并进入确认页，确认的是已失效的网页会话；首次未登录的原因未单独证实。修复（`f55231f`，待实机复测）：最后一个相机流关闭时主机丢弃图片；卡片在没有相机流时拒绝送码，送码后最多等 10 秒，看扫码页是否关闭相机流，报告“已识别／未识别”，并回到手机画面。
+
+## round11：手机只走移动网络，经 Tailscale 连接 ADB
+
+2026-11-16，同一台未 root 的 Android 16 真机。手机关掉 WiFi、拔掉 USB 后，Mac 经 Tailscale 连上手机的 adbd，**`bridge.py` 的主机启动、状态、送码、控件树和停止全部成功**。本轮没有打开任何业务 App。原始证据仅存于 `.local/accept/round11/`。
+
+用户授权本轮临时使用传统 TCP（`adb tcpip 5555`），本轮结束前用 `adb usb` 切回。基线实际是原生无线调试的 transport，不是 USB。`tailscale ping` 显示直连（未经中继），延迟 102 ms。
+
+| 操作（`--serial` 为手机 tailnet 地址:5555） | 中位数 s | 最大值 s | 结果 |
+| --- | --- | --- | --- |
+| `start`（含推送 bridge.jar） | 0.643 | 0.643 | `log` 中出现 READY |
+| `status` ×3 | 0.139 | 0.149 | 成功 |
+| `image` ×3 | 0.143 | 0.145 | 成功 |
+| `tree` ×1 | 0.152 | 0.152 | 成功 |
+| `screenshot` ×3 | 0.139 | 0.139 | 失败：虚拟屏幕上没有 App，所以没有画面；截图链路未证实 |
+| `stop` | 0.469 | 0.469 | association 已移除，手机临时目录已删除 |
+
+恢复：经 USB 执行 `adb usb` 并断开 5555。到恢复时，原生无线调试已经被关闭（`adb_wifi_enabled` 1→0），无线 transport 和 mDNS 服务都消失了；本轮没有区分这是关 WiFi 导致的，还是 `adb tcpip` 导致的。用户在开发者选项里重新打开“无线调试”后，原有配对仍在，无线 transport 和 mDNS 服务恢复，无需重新配对。`persist.adb.tcp.port` 前后均为空；`service.adb.tcp.port` 从空变为 `adb usb` 写入的 0，没有传统 TCP 监听。切换网络后，手机的 Tailscale 接口从 `tun0` 变成了 `tun1`，所以按接口名查 tailnet 地址不可靠。
+
+结论：只走移动网络时，经 Tailscale 的 ADB 足够快，可以支撑主机控制命令；但切换 `tcpip` 模式或关掉 WiFi 之后，必须由用户在手机上重新打开一次无线调试。
