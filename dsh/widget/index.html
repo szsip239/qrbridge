@@ -36,6 +36,11 @@ button:focus-visible { outline: 2px solid #9cc8ff; outline-offset: 2px; }
   width: calc(var(--aspect, .5625) * (460px - var(--edge)) + var(--edge)); /* A far eye point keeps the swinging lid within a few percent of the body's width, inside the window. */
   perspective: 2800px; perspective-origin: 50% 100%;
 }
+/* On the Board the cell is the only frame: centre the folded cover (the box's lower half) in it so its top edge shows. */
+[data-place="board"] .box { bottom: calc(50% - 115px); }
+/* Nothing is captured on the Board, so the glass would show the Board itself; a dark screen keeps the labels readable. */
+[data-place="board"] .screen { background: #1d1f23; }
+[data-place="board"] .body { box-shadow: none; }
 .device { position: absolute; inset: 0; transform-style: preserve-3d; transform-origin: 50% 100%; transform: rotateX(calc(sin(var(--fold) * 180deg) * 10deg)); }
 
 /* Body of each half: a titanium edge line around a slim black bezel ring; the screen inside is the glass.

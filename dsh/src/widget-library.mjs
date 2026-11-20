@@ -12,6 +12,10 @@ export async function registerWidgetLibrary(board) {
   return board.registerWidgetLibrary({
     plugin: { packageName: plugin.name, version: plugin.version },
     catalog: [{ id: widget.id, version: widget.version }],
+    // Placements stay on the version they were added with unless a plan moves them; move every earlier 0.1.x here.
+    upgrades: Array.from({ length: Number(widget.version.split('.')[2]) }, (_, patch) => ({
+      packageId: widget.id, fromPackageVersion: `0.1.${patch}`, toPackageVersion: widget.version, toInstanceRevisionVersion: widget.version,
+    })),
     templates: {
       async list(kind) { return kind === undefined || kind === 'widget' ? [structuredClone(manifest)] : []; },
       async read(reference) {
