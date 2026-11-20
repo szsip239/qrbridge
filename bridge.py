@@ -3,10 +3,13 @@
 import argparse
 import base64
 import json
+import re
 import shlex
 import socket
+import struct
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -15,13 +18,93 @@ LOCAL = ROOT / '.local'
 REMOTE = '/data/local/tmp/android-qr-bridge'
 # 专属的本地管理地址，不对应真实蓝牙设备。
 ASSOCIATION_MAC = '02:00:00:51:52:42'
+WECHAT = 'com.tencent.mm'
+ALIPAY = 'com.eg.android.AlipayGphone'
+WECHAT_MAIN = f'{WECHAT}/{WECHAT}.ui.LauncherUI'
+SCANNERS = {
+    WECHAT: f'{WECHAT}/{WECHAT}.plugin.scanner.ui.BaseScanUI',
+    ALIPAY: f'{ALIPAY}/com.alipay.mobile.scan.as.main.MainCaptureActivity',
+}
+DOUBLE_APP = 'com.vivo.doubleinstance/com.vivo.doubleinstance.DoubleAppResolverActivity'
+
+
+def top_activity(dump, display):
+    current_display = None
+    for line in dump.splitlines():
+        header = re.match(r'Display #(\d+) \(activities from top to bottom\):', line)
+        if header:
+            current_display = int(header[1])
+        if current_display == display:
+            resumed = re.search(r'topResumedActivity=ActivityRecord\{\S+ u\d+ (\S+)', line)
+            if resumed:
+                package, activity = resumed[1].split('/')
+                return f'{package}/{package + activity if activity.startswith(".") else activity}'
+    return None
+
+
+def bounds_centre(bounds):
+    left, top, right, bottom = bounds
+    return round((left + right) / 2), round((top + bottom) / 2)
+
+
+def wechat_plus_position(width, density):
+    # WeChat's + sits 48 dp from the right edge, 45 dp from the top.
+    scale = density / 160
+    return round(width - 48 * scale), round(45 * scale)
+
+
+def scan_menu_position(observations):
+    matches = [item for item in observations
+               if ''.join(item['text'].split()).casefold() in ('扫一扫', '掃一掃', 'scan')]
+    if len(matches) != 1:
+        raise RuntimeError('微信菜单未找到唯一的扫一扫／Scan')
+    return bounds_centre(matches[0]['bounds'])
+
+
+def original_app_position(tree):
+    pending = list(tree['windows'])
+    while pending:
+        node = pending.pop()
+        if node['id'] == 'com.vivo.doubleinstance:id/main':
+            return bounds_centre([int(value) for value in node['bounds'].split()])
+        pending.extend(node['children'])
+    raise RuntimeError('vivo 选择框未找到原版应用')
+
+
+def build_ocr():
+    source = ROOT / 'native/scan-ocr.swift'
+    binary = LOCAL / 'build/scan-ocr'
+    if not binary.exists() or binary.stat().st_mtime < source.stat().st_mtime:
+        binary.parent.mkdir(parents=True, exist_ok=True)
+        done = subprocess.run(['swiftc', '-O', str(source), '-o', str(binary)], capture_output=True, text=True)
+        if done.returncode:
+            raise RuntimeError('OCR 构建失败：' + done.stderr.strip().splitlines()[-1])
+    return binary
+
+
+def recognize_screen(binary, png):
+    with tempfile.TemporaryDirectory(prefix='open-', dir=LOCAL) as directory:
+        path = Path(directory) / 'screen.png'
+        path.write_bytes(png)
+        done = subprocess.run([str(binary), str(path)], capture_output=True, text=True)
+    if done.returncode:
+        raise RuntimeError(done.stderr.strip().splitlines()[-1])
+    return json.loads(done.stdout)
 
 class Bridge:
     def __init__(self, serial):
         self.adb = ['adb'] + (['-s', serial] if serial else [])
+        if serial and ':' in serial:
+            # A network device drops off adb after the Mac's adb server restarts; a failed connect shows up as "not found" next.
+            subprocess.run(['adb', 'connect', serial], capture_output=True, timeout=10)
 
     def run(self, *args):
-        return subprocess.run(self.adb + list(args), check=True, capture_output=True).stdout.decode().strip()
+        done = subprocess.run(self.adb + list(args), capture_output=True)
+        if done.returncode:
+            # adb's own last stderr line (for example "device ... not found") tells the card what went wrong.
+            lines = done.stderr.decode().strip().splitlines()
+            raise RuntimeError(lines[-1] if lines else f'adb {args[0]} 退出码 {done.returncode}')
+        return done.stdout.decode().strip()
 
     def shell(self, *args):
         return self.run('shell', shlex.join(args))
@@ -62,7 +145,8 @@ class Bridge:
         return {'started_pid': self.run('shell', command), 'remote_log': f'{REMOTE}/host.log'}
 
     def stop(self):
-        pid = self.shell('cat', f'{REMOTE}/host.pid')
+        # The host may already be gone (phone rebooted, stopped elsewhere); stopping still clears the association.
+        pid = self.run('shell', f'cat {REMOTE}/host.pid 2>/dev/null; true')
         running = subprocess.run(self.adb + ['shell', f'kill -0 {shlex.quote(pid)}'], capture_output=True).returncode == 0
         if running:
             self.request('stop')
@@ -93,11 +177,87 @@ class Bridge:
         launch = self.shell('am', 'start', '-W', '--display', str(status['display_id']), '-n', self.launcher(package))
         return {**started, 'status': status, 'camera': camera, 'launch': launch}
 
+    def wait_activity(self, display, accepts, reason, timeout=15):
+        deadline = time.monotonic() + timeout
+        activity = None
+        while time.monotonic() < deadline:
+            activity = top_activity(self.shell('dumpsys', 'activity', 'activities'), display)
+            if accepts(activity):
+                return activity
+            time.sleep(0.25)
+        raise RuntimeError(f'{reason}（当前：{activity or "无活动"}）')
+
+    def scan_menu(self, display, density, ocr):
+        # round16: on a cold start WeChat drops the + tap while its main screen is still loading.
+        for _ in range(4):
+            time.sleep(0.8)
+            width = struct.unpack('>I', self.screenshot()[16:20])[0]
+            self.tap(display, wechat_plus_position(width, density))
+            time.sleep(0.6)
+            try:
+                return scan_menu_position(recognize_screen(ocr, self.screenshot())['observations'])
+            except RuntimeError:
+                pass
+        raise RuntimeError('微信菜单没有打开')
+
+    def choose_original(self, display):
+        # round16: a tap while the chooser sheet is still sliding in is dropped, so tap again until it closes.
+        for _ in range(4):
+            time.sleep(0.6)
+            self.tap(display, original_app_position(self.request('tree')))
+            try:
+                return self.wait_activity(display, lambda top: top != DOUBLE_APP, '分身选择框没有关闭', timeout=2)
+            except RuntimeError:
+                pass
+        raise RuntimeError('没能自动选择原版微信')
+
+    def tap(self, display, position):
+        self.request('tap', x=position[0], y=position[1])
+
+    def screenshot(self):
+        return base64.b64decode(self.request('screenshot')['data'])
+
+    def open(self, package, scan=False):
+        if scan and package not in SCANNERS:
+            raise RuntimeError('直达扫一扫仅支持微信和支付宝')
+        ocr = build_ocr() if scan and package == WECHAT else None
+        running = self.run('shell', f'if [ -f {REMOTE}/host.pid ] && '
+                           f'kill -0 "$(cat {REMOTE}/host.pid)" 2>/dev/null; then echo running; fi')
+        started = running != 'running'
+        if started:
+            self.start('isolated')
+            self.wait_ready()
+        status = self.request('status')
+        display = status['display_id']
+        self.request('grant-camera', package=package)
+        if scan and package == ALIPAY:
+            self.shell('am', 'start', '-W', '--display', str(display), '-a', 'android.intent.action.VIEW',
+                       '-d', 'alipays://platformapi/startapp?saId=10000007', '-p', package)
+        else:
+            component = f'{WECHAT}/.ui.LauncherUI' if package == WECHAT else self.launcher(package)
+            self.shell('am', 'start', '-W', '--display', str(display), '-n', component)
+            activity = self.wait_activity(display,
+                                          lambda top: top == DOUBLE_APP or bool(top and top.startswith(package + '/')),
+                                          '应用未在虚拟屏幕打开')
+            if package == WECHAT and activity == DOUBLE_APP:
+                activity = self.choose_original(display)
+            # Opening WeChat again brings back its task as it was, which may already be the scanner.
+            if scan and activity != SCANNERS[WECHAT]:
+                top = self.wait_activity(display, lambda top: top in (WECHAT_MAIN, SCANNERS[WECHAT]), '微信未进入主界面')
+                if top == WECHAT_MAIN:
+                    self.tap(display, self.scan_menu(display, status['density'], ocr))
+        if scan:
+            activity = self.wait_activity(display, lambda top: top == SCANNERS[package], '未进入扫一扫')
+        else:
+            activity = self.wait_activity(display, lambda top: bool(top and top.startswith(package + '/')),
+                                          '应用未在虚拟屏幕打开')
+        return {'started': started, 'opened': activity, 'scanning': scan}
+
     def down(self, log_path):
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.write_text(self.shell('cat', f'{REMOTE}/host.log') + '\n')
+        log_path.write_text(self.run('shell', f'cat {REMOTE}/host.log 2>/dev/null; true') + '\n')
         result = self.stop()
-        self.shell('rm', '-r', REMOTE)
+        self.shell('rm', '-rf', REMOTE)
         return {**result, 'log_path': str(log_path)}
 
     def cameras(self):
@@ -108,7 +268,7 @@ class Bridge:
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--serial', help='adb 设备序列号或无线 ip:port；省略时由 adb 按 ANDROID_SERIAL 或唯一设备选择')
+    parser.add_argument('--serial', help='adb 设备序列号，或无线 host:port（自动 adb connect）；省略时由 adb 按 ANDROID_SERIAL 或唯一设备选择')
     commands = parser.add_subparsers(dest='command', required=True)
     for name, help_text in [('build','构建主机程序'),('build-probe','构建测试探针及已知二维码'),
                             ('install-probe','安装测试探针并授予其默认设备相机权限'),
@@ -121,6 +281,9 @@ def parse_args():
     up = commands.add_parser('up', help='启动主机、等待就绪、为目标包授予虚拟设备 CAMERA 并在虚拟屏幕启动它')
     up.add_argument('package')
     up.add_argument('--display-mode',choices=('legacy','trusted','isolated'),default='isolated')
+    open_app = commands.add_parser('open', help='复用或启动主机，在虚拟屏幕打开 App，可直达微信／支付宝扫一扫')
+    open_app.add_argument('package')
+    open_app.add_argument('--scan', action='store_true')
     commands.add_parser('down', help='保存主机日志后停止主机并删除手机端临时目录').add_argument('log_path', type=Path)
     commands.add_parser('image', help='送入 PNG 或 JPEG 图片').add_argument('path', type=Path)
     commands.add_parser('screenshot', help='保存虚拟屏幕 PNG').add_argument('path', type=Path)
@@ -130,8 +293,20 @@ def parse_args():
     tap = commands.add_parser('tap', help='点击虚拟屏幕坐标')
     tap.add_argument('x', type=int)
     tap.add_argument('y', type=int)
-    commands.add_parser('text', help='通过 adb input 输入文字，中文支持受 input 限制').add_argument('text')
+    commands.add_parser('text', help='经当前虚拟设备剪贴板粘贴 Unicode 文字').add_argument('text')
     commands.add_parser('key', help='向虚拟屏幕发送 Android 按键名或编号').add_argument('key')
+    commands.add_parser('clipboard', help='读取当前虚拟设备的文字剪贴板')
+    hold = commands.add_parser('long-press', help='长按虚拟屏幕坐标')
+    hold.add_argument('x', type=int)
+    hold.add_argument('y', type=int)
+    hold.add_argument('--duration', type=int, default=600)
+    swipe = commands.add_parser('swipe', help='在虚拟屏幕拖动')
+    for name in ('x', 'y', 'end_x', 'end_y'):
+        swipe.add_argument(name, type=int)
+    swipe.add_argument('--duration', type=int, default=300)
+    scroll = commands.add_parser('scroll', help='在虚拟屏幕滚动，正数向下／右')
+    for name in ('x', 'y', 'delta_x', 'delta_y'):
+        scroll.add_argument(name, type=float)
     commands.add_parser('camera-permission', help='查询指定包在当前虚拟设备上的 CAMERA 权限').add_argument('package')
     commands.add_parser('grant-camera', help='为指定包授予当前虚拟设备上的 CAMERA 权限').add_argument('package')
     return parser.parse_args()
@@ -149,17 +324,14 @@ def save_capture(bridge, args):
 
 def run_display_command(bridge, args):
     display = str(bridge.request('status')['display_id'])
-    if args.command == 'launch':
-        output = bridge.shell('am','start','-W','--display',display,'-n',args.component)
-    else:
-        if args.command == 'tap':
-            values = ['tap',str(args.x),str(args.y)]
-        elif args.command == 'text':
-            values = ['text',args.text]
-        else:
-            values = ['keyevent',args.key]
-        output = bridge.shell('input','-d',display,*values)
+    output = bridge.shell('am','start','-W','--display',display,'-n',args.component)
     return {'display_id':int(display),'output':output}
+
+def run_input_command(bridge, args):
+    values = vars(args).copy()
+    command = values.pop('command')
+    values.pop('serial')
+    return bridge.request(command, **values)
 
 def save_delivered_frame(bridge, directory):
     result = bridge.request('capture-frame')
@@ -185,6 +357,7 @@ def print_plain(bridge, command):
 JSON_COMMANDS = {
     'start': lambda bridge, args: bridge.start(args.display_mode),
     'up': lambda bridge, args: bridge.up(args.package, args.display_mode),
+    'open': lambda bridge, args: bridge.open(args.package, args.scan),
     'down': lambda bridge, args: bridge.down(args.log_path),
     'stop': lambda bridge, args: bridge.stop(),
     'cameras': lambda bridge, args: bridge.cameras(),
@@ -192,7 +365,8 @@ JSON_COMMANDS = {
     'camera-permission': lambda bridge, args: bridge.request(args.command,package=args.package),
     'grant-camera': lambda bridge, args: bridge.request(args.command,package=args.package),
     **dict.fromkeys(('tree','screenshot','capture-frame'), save_capture),
-    **dict.fromkeys(('launch','tap','text','key'), run_display_command),
+    'launch': run_display_command,
+    **dict.fromkeys(('tap','text','key','long-press','swipe','scroll'), run_input_command),
 }
 
 def main():
@@ -202,7 +376,14 @@ def main():
         print_plain(bridge, args.command)
         return
     handler = JSON_COMMANDS.get(args.command, lambda bridge, args: bridge.request(args.command))
-    print(json.dumps(handler(bridge, args),ensure_ascii=False,indent=2))
+    if args.command == 'open':
+        try:
+            result = handler(bridge, args)
+        except (RuntimeError, OSError) as error:
+            sys.exit(str(error).splitlines()[-1])
+    else:
+        result = handler(bridge, args)
+    print(json.dumps(result,ensure_ascii=False,indent=2))
 
 if __name__ == '__main__':
     main()

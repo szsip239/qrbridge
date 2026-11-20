@@ -1,6 +1,6 @@
 {
   "name": "@qrbridge/dsh-qrbridge",
-  "version": "0.1.12",
+  "version": "0.1.49",
   "private": true,
   "type": "module",
   "description": "DSH card that drives the Android QR virtual camera bridge",

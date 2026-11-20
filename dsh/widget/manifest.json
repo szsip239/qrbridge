@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "id": "qrbridge.scan",
-  "version": "0.1.12",
+  "version": "0.1.49",
   "title": "扫码",
   "description": "把电脑上的二维码送进安卓手机的虚拟摄像头。",
   "entry": "index.html",
@@ -44,22 +44,6 @@
         "properties": {},
         "additionalProperties": false
       },
-      "qrbridge.up": {
-        "type": "object",
-        "properties": {
-          "package": {
-            "type": "string",
-            "enum": [
-              "com.tencent.mm",
-              "com.eg.android.AlipayGphone"
-            ]
-          }
-        },
-        "required": [
-          "package"
-        ],
-        "additionalProperties": false
-      },
       "qrbridge.down": {
         "type": "object",
         "properties": {},
@@ -74,8 +58,7 @@
             "minimum": 0
           },
           "y": {
-            "type": "number",
-            "minimum": 0
+            "type": "number"
           },
           "width": {
             "type": "number",
@@ -120,6 +103,176 @@
           "x",
           "y"
         ]
+      },
+      "qrbridge.feed": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "x": {
+            "type": "number",
+            "minimum": 0
+          },
+          "y": {
+            "type": "number"
+          },
+          "width": {
+            "type": "number",
+            "minimum": 0
+          },
+          "height": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height"
+        ]
+      },
+      "qrbridge.unfeed": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "qrbridge.backdrop": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "qrbridge.open": {
+        "type": "object",
+        "properties": {
+          "package": {
+            "type": "string",
+            "enum": [
+              "com.tencent.mm",
+              "com.eg.android.AlipayGphone",
+              "com.autonavi.minimap",
+              "com.ffcs.js.app"
+            ]
+          },
+          "scan": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "package",
+          "scan"
+        ],
+        "additionalProperties": false
+      },
+      "qrbridge.text": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "qrbridge.key": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "meta": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "key",
+          "meta"
+        ]
+      },
+      "qrbridge.long-press": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "x": {
+            "type": "number",
+            "minimum": 0
+          },
+          "y": {
+            "type": "number",
+            "minimum": 0
+          },
+          "duration": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "duration"
+        ]
+      },
+      "qrbridge.swipe": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "x": {
+            "type": "number",
+            "minimum": 0
+          },
+          "y": {
+            "type": "number",
+            "minimum": 0
+          },
+          "end_x": {
+            "type": "number",
+            "minimum": 0
+          },
+          "end_y": {
+            "type": "number",
+            "minimum": 0
+          },
+          "duration": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "end_x",
+          "end_y",
+          "duration"
+        ]
+      },
+      "qrbridge.scroll": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "x": {
+            "type": "number",
+            "minimum": 0
+          },
+          "y": {
+            "type": "number",
+            "minimum": 0
+          },
+          "delta_x": {
+            "type": "number"
+          },
+          "delta_y": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "delta_x",
+          "delta_y"
+        ]
       }
     }
   },
@@ -130,7 +283,11 @@
       "h": 4
     },
     "inspector": {},
-    "windowBackground": "transparent"
+    "frame": "none",
+    "windowResize": true,
+    "windowModes": [
+      "floating"
+    ]
   },
   "permissions": {
     "network": []
