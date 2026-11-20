@@ -217,7 +217,7 @@ bridge.onVisibilityChange(value => {
 resize(false).then(() => {
   windowed = true;
   new ResizeObserver(feed).observe($('stage'));
-}, () => {});
+}, () => { document.body.dataset.place = 'board'; });
 let shownCopy = null;
 bindPhoneInput($('mirror'), $('keyboard'), controller.input, () => running && !busy && visible);
 controller.refresh().catch(failed('状态读取失败'));
