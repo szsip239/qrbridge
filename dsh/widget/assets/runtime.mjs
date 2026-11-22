@@ -205,7 +205,9 @@ $('down').addEventListener('click', () => {
   controller.down();
 });
 $('back').addEventListener('click', () => controller.back());
+// The Host repeats "visible" with every Board update, a window drag included; only a real change restarts the capture.
 bridge.onVisibilityChange(value => {
+  if (value === visible) return;
   visible = value;
   if (!visible) return unfeed();
   feed();
