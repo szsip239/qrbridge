@@ -6,7 +6,6 @@ import json
 import re
 import shlex
 import socket
-import struct
 import subprocess
 import sys
 import tempfile
@@ -48,14 +47,15 @@ def bounds_centre(bounds):
 
 
 def wechat_plus_position(width, density):
-    # WeChat's + sits 48 dp from the right edge, 45 dp from the top.
+    # Measured on the phone's own 1080x2400@480 metrics: WeChat's + sits 25 dp from the right edge, 22 dp from the top.
     scale = density / 160
-    return round(width - 48 * scale), round(45 * scale)
+    return round(width - 25 * scale), round(22 * scale)
 
 
 def scan_menu_position(observations):
+    # OCR may read the menu icon beside the label as punctuation, e.g. "）Scan".
     matches = [item for item in observations
-               if ''.join(item['text'].split()).casefold() in ('扫一扫', '掃一掃', 'scan')]
+               if re.sub(r'\W', '', item['text']).casefold() in ('扫一扫', '掃一掃', 'scan')]
     if len(matches) != 1:
         raise RuntimeError('微信菜单未找到唯一的扫一扫／Scan')
     return bounds_centre(matches[0]['bounds'])
@@ -130,7 +130,7 @@ class Bridge:
                    if 'com.android.shell' in line and ASSOCIATION_MAC.lower() in line.lower()]
         return matches[0] if matches else None
 
-    def start(self, display_mode):
+    def start(self, display_mode, screen=None):
         if self.association():
             raise RuntimeError('原型 association 已存在；先查看日志并运行 stop 清理，避免重复启动')
         self.shell('mkdir', '-p', REMOTE)
@@ -141,7 +141,7 @@ class Bridge:
         if not association:
             raise RuntimeError('association 创建未完成，查看 dumpsys companiondevice')
         command = (f'CLASSPATH={REMOTE}/bridge.jar nohup app_process / local.qrbridge.BridgeHost '
-                   f'{association} {display_mode} >{REMOTE}/host.log 2>&1 </dev/null & echo $! >{REMOTE}/host.pid; cat {REMOTE}/host.pid')
+                   f'{association} {display_mode} {screen or ""} >{REMOTE}/host.log 2>&1 </dev/null & echo $! >{REMOTE}/host.pid; cat {REMOTE}/host.pid')
         return {'started_pid': self.run('shell', command), 'remote_log': f'{REMOTE}/host.log'}
 
     def stop(self):
@@ -187,25 +187,25 @@ class Bridge:
             time.sleep(0.25)
         raise RuntimeError(f'{reason}（当前：{activity or "无活动"}）')
 
-    def scan_menu(self, display, density, ocr):
-        # round16: on a cold start WeChat drops the + tap while its main screen is still loading.
+    def scan_menu(self, display, status, ocr):
+        # round16: on a cold start WeChat drops or rejects the + tap while its main screen is still loading.
         for _ in range(4):
             time.sleep(0.8)
-            width = struct.unpack('>I', self.screenshot()[16:20])[0]
-            self.tap(display, wechat_plus_position(width, density))
-            time.sleep(0.6)
             try:
-                return scan_menu_position(recognize_screen(ocr, self.screenshot())['observations'])
+                self.tap(display, wechat_plus_position(status['width'], status['density']))
+                time.sleep(0.6)
+                # The menu hangs from the top bar; reading only the top of the screen halves the PNG and OCR time.
+                return scan_menu_position(recognize_screen(ocr, self.screenshot(height=status['height'] * 2 // 5))['observations'])
             except RuntimeError:
                 pass
         raise RuntimeError('微信菜单没有打开')
 
     def choose_original(self, display):
-        # round16: a tap while the chooser sheet is still sliding in is dropped, so tap again until it closes.
+        # round16: a tap while the chooser sheet is still sliding in is dropped or rejected, so tap again until it closes.
         for _ in range(4):
             time.sleep(0.6)
-            self.tap(display, original_app_position(self.request('tree')))
             try:
+                self.tap(display, original_app_position(self.request('tree')))
                 return self.wait_activity(display, lambda top: top != DOUBLE_APP, '分身选择框没有关闭', timeout=2)
             except RuntimeError:
                 pass
@@ -214,8 +214,8 @@ class Bridge:
     def tap(self, display, position):
         self.request('tap', x=position[0], y=position[1])
 
-    def screenshot(self):
-        return base64.b64decode(self.request('screenshot')['data'])
+    def screenshot(self, **crop):
+        return base64.b64decode(self.request('screenshot', **crop)['data'])
 
     def open(self, package, scan=False):
         if scan and package not in SCANNERS:
@@ -245,7 +245,7 @@ class Bridge:
             if scan and activity != SCANNERS[WECHAT]:
                 top = self.wait_activity(display, lambda top: top in (WECHAT_MAIN, SCANNERS[WECHAT]), '微信未进入主界面')
                 if top == WECHAT_MAIN:
-                    self.tap(display, self.scan_menu(display, status['density'], ocr))
+                    self.tap(display, self.scan_menu(display, status, ocr))
         if scan:
             activity = self.wait_activity(display, lambda top: top == SCANNERS[package], '未进入扫一扫')
         else:
@@ -278,6 +278,7 @@ def parse_args():
     start = commands.add_parser('start',help='推送并后台启动主机程序')
     start.add_argument('--display-mode',choices=('legacy','trusted','isolated'),default='isolated',
                        help='isolated 为受信任独立显示组；legacy 与 trusted 用于对照诊断')
+    start.add_argument('--screen', help='虚拟屏幕 宽x高@dpi，默认与手机实体屏相同的 1080x2400@480')
     up = commands.add_parser('up', help='启动主机、等待就绪、为目标包授予虚拟设备 CAMERA 并在虚拟屏幕启动它')
     up.add_argument('package')
     up.add_argument('--display-mode',choices=('legacy','trusted','isolated'),default='isolated')
@@ -355,7 +356,7 @@ def print_plain(bridge, command):
         print(bridge.shell('cat',f'{REMOTE}/host.log'))
 
 JSON_COMMANDS = {
-    'start': lambda bridge, args: bridge.start(args.display_mode),
+    'start': lambda bridge, args: bridge.start(args.display_mode, args.screen),
     'up': lambda bridge, args: bridge.up(args.package, args.display_mode),
     'open': lambda bridge, args: bridge.open(args.package, args.scan),
     'down': lambda bridge, args: bridge.down(args.log_path),

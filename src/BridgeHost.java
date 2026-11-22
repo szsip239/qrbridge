@@ -57,8 +57,8 @@ public final class BridgeHost {
     static ImageReader reader;
     static volatile Bitmap frame;
     static volatile Bitmap screen;
-    // 720 px at 320 dpi is 360 dp wide, the phone's own width class; at 240 dpi apps laid out for tablets.
-    static final int DENSITY = 320;
+    // The phone's own metrics: WeChat's web views lay out at the phone's 480 dpi, so a 720 px screen squeezes them to 240 dp.
+    static int width = 1080, height = 2400, density = 480;
     static final Map<Integer, Surface> streams = new HashMap<>();
     static UiAutomation automation;
     static HandlerThread uiThread;
@@ -223,7 +223,7 @@ public final class BridgeHost {
         call(cameraBuilder, "setVirtualCameraCallback", new Class<?>[]{Executor.class,callbackType}, (Executor) Runnable::run, callback);
         Object config = build(cameraBuilder);
         camera = call(device, "createVirtualCamera", new Class<?>[]{config.getClass()}, config);
-        reader = ImageReader.newInstance(720, 1280, PixelFormat.RGBA_8888, 3);
+        reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3);
         HandlerThread captureThread = new HandlerThread("qrbridge-capture");
         captureThread.start();
         reader.setOnImageAvailableListener(r -> {
@@ -236,7 +236,7 @@ public final class BridgeHost {
                 screen = Bitmap.createBitmap(padded, 0, 0, image.getWidth(), image.getHeight());
             }
         }, new Handler(captureThread.getLooper()));
-        VirtualDisplayConfig displayConfig = new VirtualDisplayConfig.Builder("二维码桥接屏幕",720,1280,DENSITY)
+        VirtualDisplayConfig displayConfig = new VirtualDisplayConfig.Builder("二维码桥接屏幕",width,height,density)
                 .setSurface(reader.getSurface()).setFlags(displayFlags()).build();
         display = (VirtualDisplay) call(device, "createVirtualDisplay",
                 new Class<?>[]{VirtualDisplayConfig.class,Executor.class,VirtualDisplay.Callback.class}, displayConfig,null,null);
@@ -248,7 +248,7 @@ public final class BridgeHost {
         Object info = infoType.getConstructor().newInstance();
         call(display.getDisplay(),"getDisplayInfo",new Class<?>[]{infoType},info);
         return new JSONObject().put("pid", android.os.Process.myPid()).put("display_id", displayId)
-                .put("display_mode",displayMode).put("density",DENSITY).put("display_group_id",infoType.getField("displayGroupId").getInt(info))
+                .put("display_mode",displayMode).put("width",width).put("height",height).put("density",density).put("display_group_id",infoType.getField("displayGroupId").getInt(info))
                 .put("display_flags",display.getDisplay().getFlags())
                 .put("device_id", call(device,"getDeviceId",new Class<?>[0]))
                 .put("persistent_device_id", call(device,"getPersistentDeviceId",new Class<?>[0]))
@@ -447,6 +447,8 @@ public final class BridgeHost {
             case "screenshot":
                 Bitmap shot = screen;
                 if (shot == null) throw new IllegalStateException("虚拟屏幕尚无画面");
+                int rows = request.optInt("height",shot.getHeight());
+                if (rows < shot.getHeight()) shot = Bitmap.createBitmap(shot,0,0,shot.getWidth(),rows);
                 ByteArrayOutputStream png = new ByteArrayOutputStream();
                 shot.compress(Bitmap.CompressFormat.PNG,100,png);
                 return new JSONObject().put("display_id",displayId).put("data",Base64.encodeToString(png.toByteArray(),Base64.NO_WRAP));
@@ -547,6 +549,12 @@ public final class BridgeHost {
         }
         Looper.prepareMainLooper();
         displayMode = args[1];
+        if (args.length > 2) {
+            String[] screenSize = args[2].split("[x@]");
+            width = Integer.parseInt(screenSize[0]);
+            height = Integer.parseInt(screenSize[1]);
+            density = Integer.parseInt(screenSize[2]);
+        }
         create(Integer.parseInt(args[0]));
         try (LocalServerSocket server = new LocalServerSocket("android_qr_bridge")) {
             System.out.println("READY " + status());

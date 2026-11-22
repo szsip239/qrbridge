@@ -4,7 +4,7 @@
 
 ## 组成与依赖
 
-- `src/BridgeHost.java`：shell 身份的 `app_process` 常驻主机，经虚拟设备创建 public、受信任、独立显示组的虚拟屏幕和后置摄像头。屏幕 720×1280／240 dpi，相机输入 640×480 RGBA_8888／30 FPS／传感器方向 0°。图片等比居中，周围补白。
+- `src/BridgeHost.java`：shell 身份的 `app_process` 常驻主机，经虚拟设备创建 public、受信任、独立显示组的虚拟屏幕和后置摄像头。屏幕默认与手机实体屏相同的 1080×2400／480 dpi（720×1280 时微信小程序按 480 dpi 排版，被挤到约 240 dp 宽，Kimi 授权按钮落在画面外），相机输入 640×480 RGBA_8888／30 FPS／传感器方向 0°。图片等比居中，周围补白；扫码页只预览相机画面中间 9:20 的竖条，`image` 送入的码两侧要留白。
 - `bridge.py`：仅依赖 Python 标准库与现有 `adb`，USB 或无线连接均由 ADB 提供。每次协议请求临时建立本机转发，结束后移除。
 - `src/ProbeActivity.java`：仅申请 CAMERA 权限的自建探针。Camera2 用 YUV_420_888 图像读取器解码；Camera1 用 NV21 预览回调解码。按钮切换 API、“点击计数”验证同屏操作，子活动按钮验证跨任务启动；标题显示活动名、display、device 与 task 编号。
 - `src/CameraInventory.java`：在同一个 shell UID 下对照默认设备与当前虚拟设备的 Camera2 枚举，不打开相机。
@@ -112,7 +112,7 @@ adb -s "$ANDROID_SERIAL" shell am start -W --display "$DISPLAY_ID" \
 | `build` | 构建主机 JAR，不连接手机。 |
 | `build-probe` | 构建探针 APK 与已知二维码，不安装。 |
 | `install-probe` | 使用普通 APK 安装流程安装探针，再授予其默认设备 CAMERA；更新已装探针时自行用 `adb install --no-incremental -r`。 |
-| `start [--display-mode isolated\|trusted\|legacy]` | 默认 `isolated`，受信任独立显示组；另两种供对照诊断。推送并后台启动主机，创建本原型专用 shell／APP_STREAMING association；同一手机只运行一份。 |
+| `start [--display-mode isolated\|trusted\|legacy] [--screen 宽x高@dpi]` | 默认 `isolated`，受信任独立显示组；另两种供对照诊断。`--screen` 默认 `1080x2400@480`。推送并后台启动主机，创建本原型专用 shell／APP_STREAMING association；同一手机只运行一份。 |
 | `up 包名 [--display-mode ...]` | 组合 `start`、等待 READY、`status`、`grant-camera` 与启动器 `launch`，见“日常扫码入口”。 |
 | `open 包名 [--scan]` | 主机已运行则复用，否则启动并等待 READY；授予当前虚拟设备 CAMERA 并打开 App。`--scan` 直达微信／支付宝扫一扫，验证该虚拟屏幕顶部活动后输出 `started`、`opened`、`scanning`。微信需 macOS Vision 与 `swiftc`。 |
 | `down 日志路径` | 保存主机日志，`stop`，删除手机端临时目录。 |

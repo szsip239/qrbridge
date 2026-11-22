@@ -8,7 +8,7 @@ import bridge
 
 class SelectionTests(unittest.TestCase):
     def test_scan_labels(self):
-        for label in ('扫一扫', '掃一掃', ' Scan ', 'SCAN', '扫 一 扫'):
+        for label in ('扫一扫', '掃一掃', ' Scan ', 'SCAN', '扫 一 扫', '）Scan'):
             with self.subTest(label=label):
                 items = [{'text': 'New Chat', 'bounds': [370, 200, 580, 250]},
                          {'text': label, 'bounds': [370, 510, 470, 550]}]
@@ -20,8 +20,7 @@ class SelectionTests(unittest.TestCase):
                 bridge.scan_menu_position([{'text': text, 'bounds': [0, 0, 1, 1]} for text in labels])
 
     def test_plus_scales_with_title_bar(self):
-        self.assertEqual(bridge.wechat_plus_position(720, 240), (648, 68))
-        self.assertEqual(bridge.wechat_plus_position(720, 320), (624, 90))
+        self.assertEqual(bridge.wechat_plus_position(1080, 480), (1005, 66))
 
     def test_top_activity_is_scoped_to_display(self):
         dump = '''Display #0 (activities from top to bottom):
@@ -85,23 +84,23 @@ class OpenTests(unittest.TestCase):
         scanner = bridge.SCANNERS[bridge.WECHAT]
         self.bridge.wait_activity.side_effect = [bridge.DOUBLE_APP, bridge.WECHAT_MAIN, bridge.WECHAT_MAIN, scanner]
         self.bridge.request.side_effect = [
-            {'display_id': 3, 'density': 240}, {'granted': True},
+            {'display_id': 3, 'width': 720, 'height': 1280, 'density': 240}, {'granted': True},
             {'windows': [{'id': 'com.vivo.doubleinstance:id/main', 'bounds': '42 1062 360 1175', 'children': []}]},
         ]
         self.bridge.screenshot.return_value = b'\0' * 16 + struct.pack('>II', 720, 1280)
         with patch('bridge.time.sleep'):
             self.assertEqual(self.bridge.open(bridge.WECHAT, True),
                              {'started': False, 'opened': scanner, 'scanning': True})
-        self.bridge.tap.assert_has_calls([call(3, (201, 1118)), call(3, (648, 68)), call(3, (420, 530))])
+        self.bridge.tap.assert_has_calls([call(3, (201, 1118)), call(3, (682, 33)), call(3, (420, 530))])
         self.bridge.shell.assert_called_once_with('am', 'start', '-W', '--display', '3', '-n', 'com.tencent.mm/.ui.LauncherUI')
         recognize.assert_called_once_with('ocr-binary', self.bridge.screenshot.return_value)
+        self.bridge.screenshot.assert_called_once_with(height=512)
 
     @patch('bridge.recognize_screen', side_effect=[{'observations': []}, {'observations': [{'text': '扫一扫', 'bounds': [370, 510, 470, 550]}]}])
     def test_plus_is_tapped_again_until_the_menu_shows_scan(self, recognize):
-        self.bridge.screenshot.return_value = b'\0' * 16 + struct.pack('>II', 720, 1280)
         with patch('bridge.time.sleep'):
-            self.assertEqual(bridge.Bridge.scan_menu(self.bridge, 3, 240, 'ocr'), (420, 530))
-        self.assertEqual(self.bridge.tap.call_args_list, [call(3, (648, 68))] * 2)
+            self.assertEqual(bridge.Bridge.scan_menu(self.bridge, 3, {'width': 720, 'height': 1280, 'density': 240}, 'ocr'), (420, 530))
+        self.assertEqual(self.bridge.tap.call_args_list, [call(3, (682, 33))] * 2)
 
     def test_chooser_tap_is_repeated_until_the_sheet_closes(self):
         tree = {'windows': [{'id': 'com.vivo.doubleinstance:id/main', 'bounds': '42 1062 360 1175', 'children': []}]}

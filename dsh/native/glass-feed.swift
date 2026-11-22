@@ -21,11 +21,12 @@ func windows(_ option: CGWindowListOption, _ id: CGWindowID) -> [(CGWindowID, CG
 
 final class Feed: NSObject, SCStreamOutput {
   let window: CGWindowID, frame: CGRect, region: CGRect, display: CGRect
+  let onMove: (CGRect) -> Void
   let context = CIContext()
   let out = FileHandle.standardOutput
 
-  init(window: CGWindowID, frame: CGRect, region: CGRect, display: CGRect) {
-    self.window = window; self.frame = frame; self.region = region; self.display = display
+  init(window: CGWindowID, frame: CGRect, region: CGRect, display: CGRect, onMove: @escaping (CGRect) -> Void) {
+    self.window = window; self.frame = frame; self.region = region; self.display = display; self.onMove = onMove
   }
 
   func stream(_ stream: SCStream, didOutputSampleBuffer buffer: CMSampleBuffer, of type: SCStreamOutputType) {
@@ -34,6 +35,11 @@ final class Feed: NSObject, SCStreamOutput {
     guard let info = (CGWindowListCopyWindowInfo(.optionIncludingWindow, window) as! [[String: Any]]).first,
       info[kCGWindowIsOnscreen as String] as? Bool == true else { exit(0) }
     let bounds = CGRect(dictionaryRepresentation: info[kCGWindowBounds as String] as! CFDictionary)!
+    // Dragged onto another screen: capture that screen from now on.
+    if !display.contains(CGPoint(x: bounds.midX, y: bounds.midY)) {
+      onMove(bounds)
+      return
+    }
     let image = CIImage(cvPixelBuffer: pixels)
     let scale = image.extent.width / display.width
     let top = (bounds.maxY - frame.height + region.minY - display.minY) * scale
@@ -68,20 +74,48 @@ guard let id = windows(.optionOnScreenOnly, kCGNullWindowID)
   .first(where: { abs($0.1.minX - frame.minX) < 2 && abs($0.1.minY - frame.minY) < 2
     && abs($0.1.width - frame.width) < 2 && abs($0.1.height - frame.height) < 2 })?.0,
   let own = content.windows.first(where: { $0.windowID == id }),
-  let display = content.displays.first(where: { $0.frame.intersects(frame) })
+  let first = content.displays.first(where: { $0.frame.intersects(frame) })
 else {
   FileHandle.standardError.write("没有找到卡片小窗或它所在的屏幕\n".data(using: .utf8)!)
   exit(1)
 }
-let config = SCStreamConfiguration()
-config.width = Int(display.frame.width) * 2
-config.height = Int(display.frame.height) * 2
-config.minimumFrameInterval = CMTime(value: 1, timescale: fps)
-config.pixelFormat = kCVPixelFormatType_32BGRA
-config.showsCursor = false
-let feed = Feed(window: id, frame: frame, region: region, display: display.frame)
-let stream = SCStream(filter: SCContentFilter(display: display, excludingWindows: [own]), configuration: config, delegate: nil)
-try stream.addStreamOutput(feed, type: .screen, sampleHandlerQueue: DispatchQueue(label: "glass-feed"))
-try await stream.startCapture()
+let queue = DispatchQueue(label: "glass-feed")
+var stream: SCStream?
+// SCStream holds its outputs weakly.
+var feed: Feed?
+var switching = false
+
+@MainActor func capture(_ display: SCDisplay) async throws {
+  try await stream?.stopCapture()
+  let config = SCStreamConfiguration()
+  config.width = Int(display.frame.width) * 2
+  config.height = Int(display.frame.height) * 2
+  config.minimumFrameInterval = CMTime(value: 1, timescale: fps)
+  config.pixelFormat = kCVPixelFormatType_32BGRA
+  config.showsCursor = false
+  let next = SCStream(filter: SCContentFilter(display: display, excludingWindows: [own]), configuration: config, delegate: nil)
+  let output = Feed(window: id, frame: frame, region: region, display: display.frame) { bounds in
+    Task { @MainActor in
+      do { try await follow(bounds) } catch {
+        FileHandle.standardError.write("换屏后取景失败：\(error)\n".data(using: .utf8)!)
+        exit(1)
+      }
+    }
+  }
+  try next.addStreamOutput(output, type: .screen, sampleHandlerQueue: queue)
+  try await next.startCapture()
+  stream = next
+  feed = output
+}
+
+@MainActor func follow(_ bounds: CGRect) async throws {
+  let centre = CGPoint(x: bounds.midX, y: bounds.midY)
+  guard !switching, let display = content.displays.first(where: { $0.frame.contains(centre) }) else { return }
+  switching = true
+  defer { switching = false }
+  try await capture(display)
+}
+
+try await capture(first)
 FileHandle.standardError.write("FEEDING window \(id)\n".data(using: .utf8)!)
 while true { try await Task.sleep(for: .seconds(3600)) }
