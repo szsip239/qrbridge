@@ -1,0 +1,25 @@
+QRBridge Wake 0.2.0
+
+LibADB Android BC 3.5.1
+Copyright 2021 Muntashir Al-Islam; contributors including Osservatorio Nessuno.
+https://github.com/osservatorionessuno/libadb-android-bc/tree/3.5.1
+Used under Apache License 2.0 (upstream offers GPL-3.0-or-later OR Apache-2.0).
+Selected sources also carry BSD-3-Clause and MIT notices. The complete license
+texts and source notices are included in this APK's assets/licenses directory.
+BSD-3-Clause: AdbConnection, AdbStream, AdbProtocol — Copyright 2013 Cameron Gutman.
+BSD-3-Clause: AdbAuthenticationFailedException — Copyright 2020 Sam Palmer.
+MIT: PRNGFixes — Copyright 2013 Google Inc.
+AdbMdns is also Copyright 2020 南宫雪珊 and Copyright 2022 Muntashir Al-Islam.
+
+Bouncy Castle 1.84 (bcprov, bctls, bcpkix, bcutil)
+Copyright (c) 2000-2026 The Legion of the Bouncy Castle Inc.
+https://www.bouncycastle.org/licence.html
+MIT license, included as BouncyCastle-MIT.txt.
+
+AndroidX Annotation 1.9.1
+Copyright The Android Open Source Project.
+https://android.googlesource.com/platform/frameworks/support/+/androidx-annotation-release/LICENSE.txt
+Apache License 2.0, included as LibADB-Apache-2.0.txt.
+
+The app uses no analytics or external server. ADB connections are made to
+127.0.0.1 only; mDNS is used to discover the phone's own TLS port.

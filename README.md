@@ -4,7 +4,7 @@
 
 ## 组成与依赖
 
-- `src/BridgeHost.java`：shell 身份的 `app_process` 常驻主机，经虚拟设备创建 public、受信任、独立显示组的虚拟屏幕和后置摄像头。屏幕 720×1280／240 dpi，相机输入 640×480 RGBA_8888／30 FPS／传感器方向 0°。图片等比居中，周围补白。
+- `src/BridgeHost.java`：shell 身份的 `app_process` 常驻主机，经虚拟设备创建 public、受信任、独立显示组的虚拟屏幕和后置摄像头。屏幕默认与手机实体屏相同的 1080×2400／480 dpi（720×1280 时微信小程序按 480 dpi 排版，被挤到约 240 dp 宽，Kimi 授权按钮落在画面外），相机输入 640×480 RGBA_8888／30 FPS／传感器方向 0°。图片等比居中，周围补白；扫码页只预览相机画面中间 9:20 的竖条，`image` 送入的码两侧要留白。
 - `bridge.py`：仅依赖 Python 标准库与现有 `adb`，USB 或无线连接均由 ADB 提供。每次协议请求临时建立本机转发，结束后移除。
 - `src/ProbeActivity.java`：仅申请 CAMERA 权限的自建探针。Camera2 用 YUV_420_888 图像读取器解码；Camera1 用 NV21 预览回调解码。按钮切换 API、“点击计数”验证同屏操作，子活动按钮验证跨任务启动；标题显示活动名、display、device 与 task 编号。
 - `src/CameraInventory.java`：在同一个 shell UID 下对照默认设备与当前虚拟设备的 Camera2 枚举，不打开相机。
@@ -18,12 +18,16 @@
 已构建主机、手机已连接时，三步完成一次扫码；多台设备时先 `export ANDROID_SERIAL=...`，`adb` 和本 CLI 都按它选设备。
 
 ```sh
-python3 bridge.py up com.tencent.mm
+python3 bridge.py open com.tencent.mm --scan
 python3 bridge.py image 二维码.png
 python3 bridge.py down .local/host.txt
 ```
 
-`up` 依次执行 `start`、等待日志出现 `READY`（30 秒超时并附原始日志）、`status`、`grant-camera`，再用该包的启动器活动在虚拟屏幕 `launch`，一次输出全部结果。之后在虚拟屏幕进入 App 的扫一扫；码过期就重新 `image`。`down` 先保存主机日志，再 `stop` 并删除手机端临时目录。上次未清理的 association 仍会让 `up` 报错，此时先 `stop`。
+`open 包名` 复用运行中的主机；主机未运行时执行 `start` 并等待 `READY`，然后为目标包授予虚拟设备 CAMERA 并在虚拟屏幕打开启动器活动。`--scan` 仅支持微信与支付宝：支付宝通过固定包名的 URI 进入扫一扫；微信启动主界面，遇到 vivo 双开选择框时选原版，点击按屏幕尺寸计算的右上角加号，再通过 OCR 定位“扫一扫／Scan”。只有目标虚拟屏幕的顶部活动确认为 `BaseScanUI` 或 `MainCaptureActivity` 才报告扫码成功。
+
+成功时输出一个 JSON 对象：`{"started": false, "opened": "包名/活动全名", "scanning": true}`；`started` 表示本次是否启动主机，失败时退出码非零，stderr 最后一行为简短原因。去掉 `--scan` 只打开 App；支付宝用 `python3 bridge.py open com.eg.android.AlipayGphone --scan`。微信 OCR 使用 macOS Vision，首次运行会用 `swiftc -O native/scan-ocr.swift -o .local/build/scan-ocr` 构建，需安装 Xcode Command Line Tools；也可先离线编译，再用 `.local/build/scan-ocr 图片.png` 查看识别结果（像素坐标以左上角为原点）。离线测试运行 `python3 -m unittest discover -s tests`。
+
+码过期就重新 `image`。`down` 先保存主机日志，再 `stop` 并删除手机端临时目录。原有 `up` 保留：始终执行 `start`、等待 `READY`、`status`、`grant-camera` 与启动器 `launch`，不自动进入扫一扫。上次未清理的 association 仍会让新启动报错，此时先查看日志并 `stop`。
 
 ## DSH 卡片
 
@@ -34,6 +38,8 @@ python3 bridge.py down .local/host.txt
 | `qrbridge.status`、`qrbridge.up`、`qrbridge.down` | 主机状态、为微信／支付宝启动（返回虚拟屏幕上打开的活动，vivo 双开选择框需在手机画面选原版）、结束并保存日志 |
 | `qrbridge.scan` | 截取卡片透明取景框下的屏幕区域并 `image` 送入虚拟相机 |
 | `qrbridge.screen`、`qrbridge.tap`、`qrbridge.back` | 读取虚拟屏幕画面、按画面坐标点击、返回键 |
+
+点击卡片中的手机画面后可打字，中文由 Mac 输入法组字后提交；Cmd+V 粘贴电脑剪贴板。Enter、退格、Delete、方向键、Tab 和 Escape 发送到虚拟屏幕。按住为长按、拖动为滑动，滚轮／触控板可滚动；在手机画面长按并选择“复制”后，文字进入电脑剪贴板，卡片短暂显示灰色“已复制到电脑”。输入动作复用主机控制连接，手机复制事件随镜像流推送。
 
 卡片 `qrbridge.scan` 声明 `uiHints.windowBackground: "transparent"`，须开成置顶 Widget Window 使用：取景框坐标加上 `@mosaic/dsh-native-probe` 提供的 `mosaicNativeSurfaces.widgetWindowFrame` 得到屏幕区域，由 `/usr/sbin/screencapture` 截取，DSH 需要 macOS“屏幕录制”权限。依赖 OpenKanban 的透明 Widget Window 与窗口坐标改动，尚未随 Host 发布。插件配置：
 
@@ -106,8 +112,9 @@ adb -s "$ANDROID_SERIAL" shell am start -W --display "$DISPLAY_ID" \
 | `build` | 构建主机 JAR，不连接手机。 |
 | `build-probe` | 构建探针 APK 与已知二维码，不安装。 |
 | `install-probe` | 使用普通 APK 安装流程安装探针，再授予其默认设备 CAMERA；更新已装探针时自行用 `adb install --no-incremental -r`。 |
-| `start [--display-mode isolated\|trusted\|legacy]` | 默认 `isolated`，受信任独立显示组；另两种供对照诊断。推送并后台启动主机，创建本原型专用 shell／APP_STREAMING association；同一手机只运行一份。 |
+| `start [--display-mode isolated\|trusted\|legacy] [--screen 宽x高@dpi]` | 默认 `isolated`，受信任独立显示组；另两种供对照诊断。`--screen` 默认 `1080x2400@480`。推送并后台启动主机，创建本原型专用 shell／APP_STREAMING association；同一手机只运行一份。 |
 | `up 包名 [--display-mode ...]` | 组合 `start`、等待 READY、`status`、`grant-camera` 与启动器 `launch`，见“日常扫码入口”。 |
+| `open 包名 [--scan]` | 主机已运行则复用，否则启动并等待 READY；授予当前虚拟设备 CAMERA 并打开 App。`--scan` 直达微信／支付宝扫一扫，验证该虚拟屏幕顶部活动后输出 `started`、`opened`、`scanning`。微信需 macOS Vision 与 `swiftc`。 |
 | `down 日志路径` | 保存主机日志，`stop`，删除手机端临时目录。 |
 | `status` | 返回 PID、虚拟设备编号、持久 ID、显示编号、显示组编号、模式、实际 Display flags、相机 ID、已配置流数、图片是否已加载。 |
 | `log` | 读取手机端原始主机日志。 |
@@ -119,9 +126,12 @@ adb -s "$ANDROID_SERIAL" shell am start -W --display "$DISPLAY_ID" \
 | `launch 包名/Activity` | 用 `am start -W --display` 在当前虚拟屏幕启动组件，不结束已有任务。 |
 | `screenshot 输出.png` | 保存该虚拟屏幕的 ImageReader 画面；没有画面直接报错。 |
 | `tree 输出.json` | 保存同一显示的 UiAutomation 控件树，含文字、类名、控件 ID、坐标和子节点。 |
-| `tap x y` | 用系统 `input -d` 点击该虚拟屏幕坐标。 |
-| `text 文字` | 用 `input -d ... text` 输入，中文仍受系统 input 限制，`%s` 表示空格。 |
-| `key 按键名或编号` | 用 `input -d ... keyevent` 发送按键，例如 `KEYCODE_BACK`。 |
+| `tap x y` | 经主机命令连接点击该虚拟屏幕坐标。 |
+| `text 文字` | 设置当前虚拟设备剪贴板并注入 PASTE，支持中文、空格与换行。 |
+| `key 按键名或编号` | 经主机向虚拟屏幕注入按键，例如 `KEYCODE_BACK`。 |
+| `long-press x y [--duration 600]`、`swipe x y end_x end_y [--duration 300]` | 长按或滑动；时长单位毫秒。 |
+| `scroll x y delta_x delta_y` | 在指定坐标滚动；位移为滚轮刻度，正数向右／下。 |
+| `clipboard` | 读取当前虚拟设备剪贴板，返回 `device_id` 和 `text`，不读取物理设备分区。 |
 | `stop` | 请求主机释放资源，移除本原型 association；主机已退出时清理剩余 association。 |
 
 ```sh
@@ -130,7 +140,7 @@ python3 bridge.py cameras
 python3 bridge.py screenshot .local/evidence/screen.png
 python3 bridge.py tree .local/evidence/tree.json
 python3 bridge.py tap 338 80
-python3 bridge.py text 'hello%sworld'
+python3 bridge.py text '你好 world'
 python3 bridge.py key KEYCODE_BACK
 ```
 
@@ -187,6 +197,12 @@ python3 .local/round4/run_case.py \
 round4 只对微信做只读属性与系统事件查询。微信 8.0.80 的 `BaseScanUI` 为 `singleTask`、portrait、`RESIZE_MODE_RESIZEABLE`、taskAffinity=`com.tencent.mm`，允许远程显示，但未声明 `allowEmbedded`。因此旧显示的信任属性是有实证支持的根因；没有发现必须 root 才能解决的活动属性。后续 round5 已复测扫码活动留在 display 22 并连接虚拟相机，详见 RESULTS。
 
 ## 无线运行与恢复
+
+### 手机重启后开启 5555
+
+[`wake/`](wake/README.md) 提供中文应用「5555 唤醒」（`dev.qrbridge.wake`）：`./wake/build.sh` 构建 `.local/artifacts/qrbridge-wake-0.2.0.apk`。首次安装后，在分屏的系统配对码窗口和应用菜单完成配对；自动恢复需经 USB 授予 `adb shell pm grant dev.qrbridge.wake android.permission.WRITE_SECURE_SETTINGS`，并允许通知。vivo 还需用户允许应用「自启动」；覆盖升级保留已有配对和权限。
+
+重启解锁后，应用等到任意 Wi-Fi（包括别人的热点）自动尝试一次并通知结果；临时开启的无线调试用完关回去。按钮先检查监听，已有 5555 时无需 Wi-Fi，直接显示「5555 已在运行」。成功后可关 Wi-Fi，经移动网络／Tailscale 使用 `adb connect "$PHONE_TAILNET:5555"`；保持 USB 调试设置和 Tailscale 在线。0.1.0 手动路径已通过 round14，0.2.0 新行为按 [手机测试计划](wake/TEST_PLAN.md) 单独验收。
 
 **本轮通过的是：已有 USB 授权 → 用 USB 开启传统 ADB TCP → 重跑与主机启动均通过 Wi-Fi。** USB 线仍连接供电，但验证阶段所有推送、送图和操作都显式选择无线标识。无线 transport 实际断开约 15 秒后重连，PID、虚拟设备、相机和显示保持，继续送新图、解码、读树及点击成功。
 

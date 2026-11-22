@@ -2,26 +2,30 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createController } from '../widget/assets/controller.mjs';
 
-test('an action stays busy until its run finishes, then rereads the status', async () => {
-  const listeners = {};
+test('an action waits for the owner record instead of unrelated Host status broadcasts', async () => {
   const emitted = [];
-  let reads = 0;
+  const ticks = [];
+  let record = { running: true, busy: null, last: { at: 'before' } };
   const bridge = {
-    requestReadIntent: async () => ({ running: true, reads: ++reads }),
+    requestReadIntent: async () => record,
     emitIntent: (name, payload) => emitted.push([name, payload]),
-    onStatusChange: listener => { listeners.status = listener; return () => {}; },
     onVisibilityChange: () => () => {},
   };
   const busy = [];
   let snapshot;
-  const controller = createController(bridge, { onSnapshot: value => { snapshot = value; }, onBusy: value => busy.push(value), onError: assert.fail });
-  const action = controller.up('com.tencent.mm');
+  const controller = createController(bridge, { onSnapshot: value => { snapshot = value; }, onBusy: value => busy.push(value), onError: assert.fail,
+    sleep: () => new Promise(resolve => ticks.push(resolve)) });
+  await controller.refresh();
+  const action = controller.open('com.tencent.mm', true);
   assert.equal(controller.down(), action);
-  listeners.status('idle');
-  listeners.status('running');
-  listeners.status('error');
+  record = { running: true, busy: 'open', last: { at: 'after' } };
+  ticks.shift()();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(busy, [true]);
+  record = { ...record, busy: null };
+  ticks.shift()();
   await action;
-  assert.deepEqual(emitted, [['qrbridge.up', { package: 'com.tencent.mm' }]]);
+  assert.deepEqual(emitted, [['qrbridge.open', { package: 'com.tencent.mm', scan: true }]]);
   assert.deepEqual(busy, [true, false]);
-  assert.equal(snapshot.reads, 1);
+  assert.equal(snapshot.last.at, 'after');
 });

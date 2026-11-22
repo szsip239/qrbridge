@@ -6,6 +6,7 @@ import test from 'node:test';
 import { createBridgeCli } from '../src/bridge-cli.mjs';
 import { createOwner } from '../src/owner.mjs';
 
+const logFailure = async () => {};
 const now = () => new Date('2026-11-15T12:00:00.000Z');
 
 test('bridge CLI passes the serial and surfaces the last stderr line on failure', async () => {
@@ -18,26 +19,36 @@ test('bridge CLI passes the serial and surfaces the last stderr line on failure'
   await assert.rejects(run(['fail']), { message: '原型 association 已存在' });
 });
 
-test('up and down track the target and save the host log under logDir', async () => {
+test('open and down track the target and save the host log under logDir', async () => {
   const calls = [];
-  const launch = 'Status: ok\nActivity: com.vivo.doubleinstance/.DoubleAppResolverActivity\nComplete';
-  const owner = createOwner({ run: async args => { calls.push(args); return args[0] === 'up' ? { launch } : {}; }, logDir: '/logs', now });
-  await owner.up({ package: 'com.tencent.mm' });
+  const opened = { started: true, opened: 'com.tencent.mm/.plugin.scanner.ui.BaseScanUI', scanning: true };
+  const owner = createOwner({ run: async args => { calls.push(args); return args[0] === 'open' ? opened : {}; }, logDir: '/logs', logFailure, now });
+  await owner.open({ package: 'com.tencent.mm', scan: true });
+  assert.deepEqual(calls[0], ['open', 'com.tencent.mm', '--scan']);
   const snapshot = await owner.snapshot();
   assert.equal(snapshot.target, 'com.tencent.mm');
-  assert.equal(snapshot.last.result.opened, 'com.vivo.doubleinstance/.DoubleAppResolverActivity');
+  assert.deepEqual(snapshot.last.result, opened);
   await owner.down();
   assert.deepEqual(calls.at(-1), ['down', '/logs/host-2026-11-15T12-00-00.000Z.log']);
   assert.equal((await owner.snapshot()).target, null);
 });
 
 test('a failed action is rethrown and reported in the next snapshot while the host is down', async () => {
-  const run = async ([command]) => { throw new Error(command === 'up' ? 'association 已存在' : 'connection refused'); };
-  const owner = createOwner({ run, logDir: '/logs', now });
-  await assert.rejects(owner.up({ package: 'com.tencent.mm' }), { message: 'association 已存在' });
+  const run = async ([command]) => { throw new Error(command === 'open' ? 'association 已存在' : 'connection refused'); };
+  const owner = createOwner({ run, logDir: '/logs', logFailure, now });
+  await assert.rejects(owner.open({ package: 'com.tencent.mm', scan: false }), { message: 'association 已存在' });
   assert.deepEqual(await owner.snapshot(), {
-    running: false, target: null, message: 'connection refused',
-    last: { name: 'up', ok: false, message: 'association 已存在', at: '2026-11-15T12:00:00.000Z' },
+    running: false, busy: null, target: null, message: 'connection refused',
+    last: { name: 'open', ok: false, message: '请重试', detail: 'association 已存在', at: '2026-11-15T12:00:00.000Z' },
+  });
+});
+
+test('an adb error reaches the card as a few Chinese words, with the original kept as detail', async () => {
+  const run = async () => { throw new Error("adb: device 'phone' not found"); };
+  const owner = createOwner({ run, logDir: '/logs', logFailure, now });
+  await assert.rejects(owner.open({ package: 'com.tencent.mm', scan: false }));
+  assert.deepEqual((await owner.snapshot()).last, {
+    name: 'open', ok: false, message: '手机未连接', detail: "adb: device 'phone' not found", at: '2026-11-15T12:00:00.000Z',
   });
 });
 
@@ -49,7 +60,7 @@ function scanOwner(streamsAfterImage, calls = []) {
       if (args[0] === 'image') imageSent = true;
       return args[0] === 'status' ? { streams: imageSent ? streamsAfterImage : 1 } : {};
     },
-    logDir: '/logs', now: () => new Date(clock), sleep: async ms => { clock += ms; }, recognizeMs: 2000,
+    logDir: '/logs', logFailure, now: () => new Date(clock), sleep: async ms => { clock += ms; }, recognizeMs: 2000,
     windowFrame: async id => ({ visible: true, x: 1488, y: 52, width: 360, height: 440, id }),
     capture: async (region, path) => calls.push(['capture', region, path]),
   });
@@ -73,23 +84,41 @@ test('scan reports no recognition while the scanner keeps its stream open', asyn
 });
 
 test('scan refuses when the phone has no camera stream open', async () => {
-  const owner = createOwner({ run: async () => ({ streams: 0 }), logDir: '/logs', now, capture: assert.fail,
+  const owner = createOwner({ run: async () => ({ streams: 0 }), logDir: '/logs', logFailure, now, capture: assert.fail,
     windowFrame: async () => ({ visible: true, x: 0, y: 0, width: 1, height: 1 }) });
   await assert.rejects(owner.scan(viewfinder), /先在手机画面打开扫一扫/);
 });
 
 test('scan refuses a card that is not open as a window', async () => {
-  const owner = createOwner({ run: assert.fail, logDir: '/logs', now, capture: assert.fail,
+  const owner = createOwner({ run: assert.fail, logDir: '/logs', logFailure, now, capture: assert.fail,
     windowFrame: async () => ({ visible: false, x: 0, y: 0, width: 1, height: 1 }) });
   await assert.rejects(owner.scan({ placementId: 'p', x: 0, y: 0, width: 1, height: 1 }), /置顶小窗/);
 });
 
 test('a second action is refused while the first is still running', async () => {
   const { promise, resolve } = Promise.withResolvers();
-  const owner = createOwner({ run: () => promise, logDir: '/logs', now });
+  const owner = createOwner({ run: () => promise, logDir: '/logs', logFailure, now });
   const first = owner.down();
   await assert.rejects(owner.down(), /还在进行/);
   resolve({});
   await first;
   assert.equal((await owner.snapshot()).last.ok, true);
+});
+
+test('concurrent feeds keep one capture open, each stopping the one before', async () => {
+  let open = 0, most = 0;
+  const openCapture = async () => {
+    open += 1;
+    most = Math.max(most, open);
+    await new Promise(resolve => setTimeout(resolve, 5));
+    return async () => { open -= 1; };
+  };
+  const windowFrame = async () => ({ x: 0, y: 0, width: 320, height: 300, visible: true });
+  const owner = createOwner({ run: async () => ({}), logDir: '/logs', logFailure, now, windowFrame, openCapture });
+  const region = { placementId: 'qrbridge.scan', x: 0, y: -300, width: 320, height: 300 };
+  await Promise.all([owner.feed(region), owner.feed(region), owner.feed(region)]);
+  assert.equal(open, 1);
+  assert.equal(most, 1);
+  await owner.unfeed();
+  assert.equal(open, 0);
 });
