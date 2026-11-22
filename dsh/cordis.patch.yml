@@ -1,0 +1,3 @@
+- insert:
+    - id: qrbridge
+      name: '@qrbridge/dsh-qrbridge'

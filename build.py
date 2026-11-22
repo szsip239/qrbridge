@@ -16,6 +16,7 @@ def main():
     android = SDK / 'platforms/android-36/android.jar'
     subprocess.run(['javac', '--release', '17', '-classpath', str(android),
                     '-d', str(classes), str(ROOT / 'src/BridgeHost.java'),
+                    str(ROOT / 'src/ClipboardAccess.java'),
                     str(ROOT / 'src/CameraInventory.java')], check=True)
     jar = BUILD / 'classes.jar'
     with zipfile.ZipFile(jar, 'w') as output:

@@ -255,3 +255,152 @@ paired、unplugged、rebooted 码分别为 `android-qr-bridge:round7:paired:2026
 | 关卡 6：网页端已登录 | **通过。** 网页进入已登录的支付宝商家平台，随后点击退出登录，页面显示登录入口，关闭独立 task-space；见本地 `web-logged.png`。 |
 
 开始和结束时原生无线调试均开启、配对保留，传统 TCP 两项属性均为空，转发列表一致且为空；原有 companion association 保留，没有残留虚拟设备或手机实验目录。`down-final.txt`、`virtual-final.txt`、`companion-final.txt`、`remote-final.txt` 和前后基线文件记录清理。支付宝重新在 display 0 打开首页，仍处于登录状态；见 `physical-final-activities.txt` 和截图。没有提交 Git。
+
+## DSH 玻璃卡片实机验收：微信（round9）
+
+2026-11-16，USB ADB，独立 DSH home（Host 0.1.17 加透明 Widget Window 改动、helper `0.3.0-native-poc.15`、卡片 `@qrbridge/dsh-qrbridge` 0.1.9）。用户只在 Mac 上操作卡片，手机端由 Terra Worker 只读取证。**微信网页登录整链通过**，原始证据仅存于 Git 忽略的 `.local/accept/round9/`。
+
+| 检查点 | 结果与证据 |
+| --- | --- |
+| 0 预检 | 通过：唯一设备，主机未运行，无本原型 association（`0/`）。 |
+| A 卡片“微信” | 首次未通过：微信任务仍在 display 0 且已停止，虚拟显示为空；主机日志显示 vivo 双开选择框 `DoubleAppResolverActivity` 出现后无人选择、随即 `onDisplayEmpty`（`A/`、`A-diag/`）。“结束”后重按“微信”，在卡片手机画面中选原版微信后通过：`LauncherUI` 为虚拟显示 top，CAMERA 已授予（`A2/`）。物理屏锁屏，虚拟显示 `KeyguardShowing=false`，不影响操作。 |
+| B 扫一扫 | 通过：卡片手机画面中打开扫一扫，`BaseScanUI` 留在虚拟显示，`media.camera` 中微信连接虚拟相机，status 有一个流；送码前 `capture-frame` 640×480（`B/`）。 |
+| C 玻璃窗扫码 | 通过：卡片截取透明取景框下的网页登录码（`dsh-logs/viewfinder.png`，电脑 ZXing 解码成功）并送入；微信进入 `ExtDeviceWXLoginUI`，仍在虚拟显示。确认页为英文界面“Login confirmation / Open File Transfer for Web / Open / Cancel”，无风险提示；控件树为空（`C/`）。 |
+| D 业务结果与清理 | 用户在卡片手机画面点“Open”，网页进入文件传输助手（用户观察），随后网页退出登录；手机 `ChattingUI` 在虚拟显示（`D/`）。“结束”后主机进程不在、association 为零、手机临时目录不存在、无残留虚拟设备；活动转储中已无微信任务（虚拟显示带 `DESTROY_CONTENT_ON_REMOVAL`），未证实微信回到 display 0 或登录状态（`D-cleanup/`）。 |
+
+卡片暴露的问题：`up` 不显示启动结果，双开选择框只能靠手机画面发现；动作执行中按钮仍可点，“结束”被执行两次，第二次在读取已删日志处报错；主机停止后手机画面仍保留最后一帧；“确认登录”按钮只认中文文字且依赖控件树，微信确认页需在手机画面点击。截图含私人聊天内容，只留本地。支付宝未在本轮执行。
+
+## DSH 玻璃卡片实机验收：支付宝（round10）
+
+2026-11-16，同 round9 环境，卡片 0.1.11（`up` 后自动打开手机画面）。**支付宝网页登录在重试后通过**，并暴露了送码残留问题；原始证据仅存于 `.local/accept/round10/`。
+
+| 检查点 | 结果与证据 |
+| --- | --- |
+| 0 预检 | 通过（`0/`）。 |
+| A 卡片“支付宝” | 通过：`.AlipayLogin` 为虚拟显示 top，CAMERA 已授予；本轮没有启动画面停留和双开选择框（`A/`）。 |
+| B 扫一扫 | 通过：`MainCaptureActivity` 留在虚拟显示，连接虚拟相机，送码前 `capture-frame` 640×480（`B/`）。 |
+| C 玻璃窗扫码 | 通过：确认页“即将在电脑上登录／请确认是否本人操作／确认登录／取消”，无风险提示（`C/`）。 |
+| D 业务结果 | 首次点确认后手机回首页，网页停在“扫码成功”，刷新后未登录。用户多次重开扫一扫后，网页进入商家平台工作台，随后退出（协调者在 ego-lite 核对）。主机日志共 4 次扫码活动转入确认页，status 始终 `image_loaded=true`（`D/`、`D2/`）。 |
+| 清理 | 主机进程、association、手机临时目录、虚拟设备均已清除；活动转储未列出支付宝任务，落点未证实（`D-cleanup/`）。 |
+
+**根因：送入的图片在识别后仍留在虚拟相机。** 每次重开扫一扫都立即扫到上一张码并进入确认页，确认的是已失效的网页会话；首次未登录的原因未单独证实。修复（`f55231f`，待实机复测）：最后一个相机流关闭时主机丢弃图片；卡片在没有相机流时拒绝送码，送码后最多等 10 秒，看扫码页是否关闭相机流，报告“已识别／未识别”，并回到手机画面。
+
+## round11：手机只走移动网络，经 Tailscale 连接 ADB
+
+2026-11-16，同一台未 root 的 Android 16 真机。手机关掉 WiFi、拔掉 USB 后，Mac 经 Tailscale 连上手机的 adbd，**`bridge.py` 的主机启动、状态、送码、控件树和停止全部成功**。本轮没有打开任何业务 App。原始证据仅存于 `.local/accept/round11/`。
+
+用户授权本轮临时使用传统 TCP（`adb tcpip 5555`），本轮结束前用 `adb usb` 切回。基线实际是原生无线调试的 transport，不是 USB。`tailscale ping` 显示直连（未经中继），延迟 102 ms。
+
+| 操作（`--serial` 为手机 tailnet 地址:5555） | 中位数 s | 最大值 s | 结果 |
+| --- | --- | --- | --- |
+| `start`（含推送 bridge.jar） | 0.643 | 0.643 | `log` 中出现 READY |
+| `status` ×3 | 0.139 | 0.149 | 成功 |
+| `image` ×3 | 0.143 | 0.145 | 成功 |
+| `tree` ×1 | 0.152 | 0.152 | 成功 |
+| `screenshot` ×3 | 0.139 | 0.139 | 失败：虚拟屏幕上没有 App，所以没有画面；截图链路未证实 |
+| `stop` | 0.469 | 0.469 | association 已移除，手机临时目录已删除 |
+
+恢复：经 USB 执行 `adb usb` 并断开 5555。到恢复时，原生无线调试已经被关闭（`adb_wifi_enabled` 1→0），无线 transport 和 mDNS 服务都消失了；本轮没有区分这是关 WiFi 导致的，还是 `adb tcpip` 导致的。用户在开发者选项里重新打开“无线调试”后，原有配对仍在，无线 transport 和 mDNS 服务恢复，无需重新配对。`persist.adb.tcp.port` 前后均为空；`service.adb.tcp.port` 从空变为 `adb usb` 写入的 0，没有传统 TCP 监听。切换网络后，手机的 Tailscale 接口从 `tun0` 变成了 `tun1`，所以按接口名查 tailnet 地址不可靠。
+
+结论：只走移动网络时，经 Tailscale 的 ADB 足够快，可以支撑主机控制命令；但切换 `tcpip` 模式或关掉 WiFi 之后，必须由用户在手机上重新打开一次无线调试。
+
+## round13：不同 Wi-Fi，经 Tailscale 连接原生无线调试
+
+2026-11-17，同一台未 root 的 Android 16 真机。手机连接与 Mac 不同的 Wi-Fi，原生无线调试开启，Mac 成功通过手机 tailnet 地址:端口建立 TLS ADB 连接；USB 同时连接，仅用于只读核实状态及手机页面上的连接端口。手机无线调试服务未被 Mac 的 mDNS 发现，`tailscale ping` 显示跨网络直连（非中继），延迟 27 ms。本轮没有打开业务 App。原始证据仅存于 `.local/accept/round13/`。
+
+| 操作（`--serial` 为手机 tailnet 地址:端口） | 中位数 s | 最大值 s | 结果 |
+| --- | --- | --- | --- |
+| `start`（含推送 bridge.jar） | 0.712 | 0.712 | `log` 中出现 READY |
+| `status` ×3 | 0.152 | 0.171 | 成功 |
+| `image` ×3 | 0.174 | 0.181 | 成功，`image_loaded=true` |
+| `tree` ×1 | 0.195 | 0.195 | 成功；虚拟屏幕没有 App，窗口列表为空 |
+| `stop` | 0.502 | 0.502 | association 已移除，虚拟设备已关闭 |
+
+结束时断开了这条 tailnet ADB 连接，无线调试仍开启（`adb_wifi_enabled=1`）；手机端桥接临时目录仍保留主机 JAR、日志和 PID 文件。此前用户曾遇到无线调试开关自动关闭，但开始本轮时已恢复，未能确定其原因。本轮证实这台手机在不同 Wi-Fi 下可经 Tailscale 使用原生无线调试运行上述主机命令；未验证中继路径或业务扫码。
+
+## round14：5555 唤醒手机验收
+
+2026-11-17，未 root 的 Android 16 vivo 真机，安装 `dev.qrbridge.wake` 0.1.0。安装前开发者选项、USB 调试和无线调试开启，运行时 ADB TCP 端口为 0，持久端口属性为空；首次安装被拒绝，重试时出现系统安全扫描提示，用户随后在手机上完成安装。本轮原始证据仅存于 `.local/accept/wake/`。
+
+| 用例 | 结果与证据 |
+| --- | --- |
+| 首次配对 | 通过：用户完成本机配对并报告成功；随后应用显示成功，系统运行时端口为 5555，监听存在。 |
+| 配对错误与恢复 | 未执行：用户跳过。 |
+| 无线调试已开 | 通过：初始运行时端口为 0；配对后用户操作应用，5555 监听存在、运行时端口为 5555，持久端口属性仍为空。 |
+| 无线调试关闭、无 grant | 通过：未授予权限且无线调试关闭时，应用提示手动开启，并跳转 vivo 开发者选项；开启无线调试并配对后，用户报告成功，监听经系统核实。 |
+| 无线调试关闭、有 grant | 通过：USB 恢复无监听后授予权限，应用自行开启无线调试并显示成功；系统确认 5555 监听，持久端口属性为空。 |
+| 无 Wi-Fi | 有 grant 时通过：确认 Wi-Fi 已关闭后点击，显示连接任意 Wi-Fi 的提示；无 grant 时未执行。 |
+| 别人手机的热点 | 未执行：未确认新 Wi-Fi 是否为另一部手机的热点。 |
+| 重启后的目标场景 | 通过：USB 拔除后重启，用户解锁、连接 Wi-Fi 并点开启；无需重新配对，应用显示成功，系统确认 5555 监听和权限保留。重启后 Tailscale 需在手机上重新连接。 |
+| 蜂窝网络经 Tailscale | 通过：重启前，用户确认仅移动网络，USB 已拔除，系统证据确认 Wi-Fi 关闭；Mac 经 tailnet 连接 5555，`shell id` 返回 shell 身份。 |
+| 重新发现与界面 | 部分通过：在另一 Wi-Fi 上恢复无监听后，系统网络许可出现；首次等待超时，允许后再次点击成功建立监听。未记录新旧连接端口是否不同，未测旋转、分屏中的执行状态或重复请求。 |
+| 系统撤销配对 | 未执行：用户跳过。 |
+
+**本机 5555 接受连接已验收**，**Mac 经蜂窝网络连接已验收**；构建验证另见 `wake/BUILD_REPORT.md`。另测发现，5555 已在监听且 Wi-Fi 可用时，关闭无线调试后再次点击仍提示手动开启无线调试，而非直接报告监听已存在；Wi-Fi 关闭时也仍提示连接 Wi-Fi。新网络的系统许可若在发现超时后才接受，需要再点一次。验收结束时应用已安装且保留配对和权限，5555 监听存在，Mac 可连接；未撤销权限、卸载或关闭监听。
+
+## round15：虚拟屏手机远程桌面可行性
+
+2026-11-17，vivo Android 16，USB ADB，isolated 显示模式；截图、控件树、活动与相机转储和交付帧在 `.local/accept/round15/`。本轮只打开页面，未送码或执行登录、支付、发送。开始前桥接主机无响应但残留 association，保存旧日志后用 `stop` 清理；结束时 `down` 成功移除本轮 association。
+
+| 项目 | 结果 | 证据与范围 |
+| --- | --- | --- |
+| 手机桌面 | 不通 | 依次启动 `SECONDARY_HOME`、`HOME`、vivo 桌面组件和发送 HOME；虚拟屏截图均报无画面、树为空。`SECONDARY_HOME` 的解析器出现在物理屏，vivo 桌面在物理屏；没有虚拟桌面可点击图标，因此无法验证图标启动后的落屏。见 `secondary-*`、`home-*`、`launcher-*`、`keyhome-*`。 |
+| 支付宝直达扫一扫 | 通过 | 指定 URI 后 `MainCaptureActivity` 位于虚拟屏，`media.camera` 记录支付宝连接本轮虚拟相机，状态有一个流；同轮成功采集 640×480 交付帧。见 `alipay-*`。 |
+| 微信直达扫一扫 | 不通 | URI 出现 vivo 原版／分身选择框；选择原版后回到支付宝首页，没有进入微信扫码，虚拟相机无流。见 `wechat-uri-*`、`wechat-result-*`。 |
+| 微信界面进入扫一扫 | 部分通过 | 启动微信并选择原版后，在画面点右上角加号及菜单第三项 Scan，`BaseScanUI` 位于虚拟屏、连接本轮虚拟相机，同轮采集 640×480 交付帧。首页树为空，菜单树有四个同 ID 可点击项但无文字，无法仅凭树可靠识别加号和扫一扫；坐标仅代表本次画面。见 `wechat-main-*`、`wechat-menu-*`、`wechat-scan-*`、`wechat-frame/`。 |
+| 返回／桌面 | 部分通过 | `KEYCODE_BACK` 从支付宝扫码返回支付宝首页，从微信扫码返回微信首页，均留在虚拟屏；在微信首页发送 `KEYCODE_HOME` 后仍为微信首页，未显示桌面。见 `back-*`、`wechat-back-*`、`wechat-home-*`。 |
+
+本轮成功的命令（`DISPLAY_ID` 取 `status`，先为各目标包授予当前虚拟设备的 CAMERA）：
+
+```sh
+python3 bridge.py start
+python3 bridge.py status
+python3 bridge.py grant-camera com.eg.android.AlipayGphone
+adb shell am start --display "$DISPLAY_ID" -a android.intent.action.VIEW -d 'alipays://platformapi/startapp?saId=10000007'
+python3 bridge.py key KEYCODE_BACK
+python3 bridge.py grant-camera com.tencent.mm
+python3 bridge.py launch com.tencent.mm/.ui.LauncherUI
+# 本次选择原版微信后，根据截图点击右上加号及 Scan；坐标不可视为稳定接口。
+python3 bridge.py tap 201 1105
+python3 bridge.py tap 645 67
+python3 bridge.py tap 460 525
+python3 bridge.py capture-frame .local/accept/round15/wechat-frame
+python3 bridge.py down .local/accept/round15/host-final.txt
+```
+
+## round16：open 直达与 5555 唤醒手机验收
+
+2026-11-17，未 root 的 Android 16 vivo 真机，使用 USB 和 Tailscale ADB。原始截图、活动和相机转储、交付帧与调试日志保存在 `.local/accept/round16/`；本轮未送码、登录、付款或发送。
+
+| 项目 | 结果与证据 |
+| --- | --- |
+| 主机新启动与复用 | 通过：无主机时 `started=true`，后续 `started=false`，主机 PID、显示和虚拟设备均未变化；高德地图、`com.ffcs.js.app` 和支付宝的虚拟 CAMERA 权限检查为已授予。 |
+| 普通应用启动 | 通过：高德地图和 `com.ffcs.js.app` 的启动活动均位于虚拟屏，`scanning=false`。 |
+| 支付宝直达扫码 | 通过：无选择框，`MainCaptureActivity` 位于虚拟屏，`media.camera` 记录本轮虚拟相机连接，同轮捕获 640×480 交付帧。首次截图出现系统英文提示，说明应用请求额外安全保护并建议在手机上操作；用户确认这是虚拟屏受保护画面提示并允许继续。复测截图已显示扫码页且无该提示，相机仍连接并交付帧；未测试识码。 |
+| 微信冷启动和热启动直达扫码 | 失败：两次均停在 vivo 英文原版／分身选择框，命令报未进入主界面。手动选择原版后可进入主界面，但再次执行 `open --scan` 仍停在选择框；未到加号、菜单 OCR 或扫码活动，无法采集同轮微信交付帧。截图见 `wechat-cold.png`、`wechat-warm.png`。 |
+| 唤醒应用覆盖升级 | 通过：0.2.0 覆盖安装成功，原有权限保留，用户允许通知和自启动；后续手动开启成功，无需重新配对。 |
+| 已监听时无 Wi-Fi／无 grant | 通过：关闭 Wi-Fi、无线调试为关闭时，已有 5555 监听的按钮显示“5555 已在运行”；临时撤销 grant 后仍显示同一结果，之后已恢复 grant 和 Wi-Fi。 |
+| 无监听且无 Wi-Fi | 通过：有 grant 和无 grant 均显示连接任意 Wi-Fi 的提示；无线调试开关保持关闭。 |
+| 无监听手动开启、恢复开关 | 通过：已配对、有 grant、有 Wi-Fi、无线调试初始关闭时，按钮显示成功，运行时端口为 5555，无线调试恢复为关闭，持久 TCP 属性保持空。 |
+| 开机自动恢复 | 未能单独证实：重启并解锁后用户在检查前打开过应用，开机时段日志已不可用；随后 5555 可连接，但无法区分自动恢复和手动操作。用户决定不再重启复测。未能验证开机通知或任务启动耗时。 |
+| 其他计划用例 | 未执行：无线调试原本开启的保留、无 grant 手动路径、新网络许可超时与重试、开机后晚连 Wi-Fi、单次运行、自动失败或中途断网、手动取消待执行任务、通知拒绝、移动网络经 Tailscale，以及旋转／分屏。未将 Wi-Fi 下的 Tailscale 连接当作蜂窝网络通过。 |
+
+结束时 0.2.0 已安装，用户 0 的 grant 和通知权限保留，5555 运行且可经 Tailscale 执行 shell；无线调试关闭，桥接主机已 `down` 并移除 association。USB 此时未被电脑识别；未修改代码或提交。
+
+微信直达修正后重测：冷启动时自动通过双开选择框并进入虚拟屏微信主界面，但命令报“微信菜单未找到唯一的扫一扫／Scan”，截图显示主界面，未进入扫码页或连接相机；热启动时自动进入 `BaseScanUI`，`media.camera` 显示微信连接本轮虚拟相机，同轮采集到 640×480 交付帧。冷启动失败原因仅能确定为菜单识别未成功，不能据此断言具体时序原因；未送码或执行业务操作。重测证据见 `.local/accept/round16/wechat-retry-*`，结束时 `down` 成功移除主机关联。
+
+微信菜单重试修正后再次验收：先结束微信进程，冷启动和随后热启动的 `open --scan` 均通过，分别返回 `started=true` 和 `started=false`，虚拟屏顶部均为 `BaseScanUI`。两次 `media.camera` 均显示微信连接本轮虚拟相机，且分别采集到 640×480 交付帧；未送码或执行业务操作。证据见 `.local/accept/round16/wechat-retry2-*`；结束时 `down` 成功移除主机关联。
+
+## round17：虚拟屏改用手机实体屏尺寸、卡片拖动与跨屏取景
+
+2026-11-22，同一台 vivo 真机经 Tailscale ADB；手机操作由 Worker 执行，原始记录、截图和交付帧在 `.local/accept/speed/`、`.local/accept/glass/`（worktree `qrbridge-speed`）。未点任何授权、确认或付款。
+
+| 项目 | 结果与证据 |
+| --- | --- |
+| Kimi 网页登录（微信扫码进入 Kimi 小程序） | 720×1280@320：功能文字一字一行，"授权登录"不在画面内，滚轮与拖动都不能让页面移动（页面固定一屏）。1080×2400@480：排版正常，"授权登录"在画面中部。截图 `D2-page.png`、`D3-page.png`。 |
+| 去掉开扫一扫的固定等待 | 失败并放弃：两种尺寸共 16 次，点击在主界面滑入时落下，被拒收或点到搜索、已登录设备页；加"画面静止 150 ms 再点"后仍 8/8 失败。保留原固定等待。 |
+| 1080×2400 下微信直达 | 先 5/5 失败：+ 仍按旧公式点到 (936,135) 的"已登录电脑版"横条；重标定为 (1005,66) 后 OCR 把菜单读成"）Scan"未匹配。修正后热 4 次 3.7–4.1 s、冷 1 次 7.4 s 均进入 `BaseScanUI`；720×1280 原版热启动 3.5–4.4 s，冷启动 1/1 失败。 |
+| 支付宝直达 | 1080×2400：round4 两次未进入扫一扫（原因未查明），round5、round6 共 3 次成功，0.9–1.8 s。 |
+| 镜像帧率 | 720×1280：15.5 fps、67 KiB/帧；1080×2400：13.4–14.0 fps、156–159 KiB/帧（画面滚动时采样）。 |
+| 小窗拖动 | 旧卡：Host 每次 Board 更新都重发 visible，卡片每次重开 glass-feed，拖动时 DSH 主进程 48–80% CPU。只在可见性改变时重开后，用户确认拖动不卡。 |
+| 跨屏取景 | 不再重开后，glass-feed 停在启动时的屏幕，拖到另一屏后交付白帧；改为跟随窗口所在屏幕后，用户确认主屏和竖屏都能扫到 Kimi 码。 |
