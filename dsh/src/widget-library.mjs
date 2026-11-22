@@ -7,14 +7,24 @@ export async function registerWidgetLibrary(board) {
   const root = new URL('../widget/', import.meta.url);
   const paths = ['manifest.json', 'index.html', 'assets/runtime.mjs', 'assets/controller.mjs', 'assets/input.mjs'];
   const files = await Promise.all(paths.map(async path => ({ path, bytes: [...await readFile(new URL(path, root))] })));
-  const widget = JSON.parse(Buffer.from(files[0].bytes).toString());
-  const manifest = { schemaVersion: 1, kind: 'widget', id: widget.id, version: widget.version, title: widget.title, description: widget.description };
+  const { id, version, title, description } = JSON.parse(Buffer.from(files[0].bytes).toString());
+  const reference = { id, version };
+  const manifest = { schemaVersion: 1, kind: 'widget', ...reference, title, description };
   return board.registerWidgetLibrary({
     plugin: { packageName: plugin.name, version: plugin.version },
-    catalog: [{ id: widget.id, version: widget.version }],
+    catalog: [reference],
+    serviceCli: [{
+      package: reference,
+      serviceCli: {
+        command: ['auto', 'qr'],
+        helpCommand: ['auto', 'qr', '--help'],
+        runOn: 'board_host',
+        description: '用 status 查询虚拟相机桥接状态，沿用看板主机的 ADB 配置。',
+      },
+    }],
     // Placements stay on the version they were added with unless a plan moves them; move every earlier 0.1.x here.
-    upgrades: Array.from({ length: Number(widget.version.split('.')[2]) }, (_, patch) => ({
-      packageId: widget.id, fromPackageVersion: `0.1.${patch}`, toPackageVersion: widget.version, toInstanceRevisionVersion: widget.version,
+    upgrades: Array.from({ length: Number(version.split('.')[2]) }, (_, patch) => ({
+      packageId: id, fromPackageVersion: `0.1.${patch}`, toPackageVersion: version, toInstanceRevisionVersion: version,
     })),
     templates: {
       async list(kind) { return kind === undefined || kind === 'widget' ? [structuredClone(manifest)] : []; },
