@@ -2,6 +2,8 @@
 
 把电脑上的二维码经虚拟摄像头送进安卓手机里的原版 App，在虚拟屏幕上完成扫码登录。入口、命令与运行方式见 `README.md`，真机结果与边界见 `RESULTS.md`，各 App 的场景与验收关卡见 `scenarios/`。
 
+排查 DSH 扫码卡的预览、窗口与采集问题时，见 [扫码卡开发踩坑](docs/agents/gotchas.md)。
+
 ## 工作约定
 
 - 手机操作交给 GPT-6.1 Terra / high / fast Worker；主会话负责协调与汇总。
